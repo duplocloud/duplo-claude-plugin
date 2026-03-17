@@ -1,0 +1,31 @@
+{
+  "hooks": {
+    "UserPromptSubmit": [{
+      "hooks": [
+        {
+          "type": "command",
+          "command": "$HOME/.claude/plugins/duplo/scripts/install-bin.sh"
+        },
+        {
+          "type": "command",
+          "command": "python3 $HOME/.duplocloud/bin/duplo_mirror.py >> $HOME/.duplocloud/mirror.log 2>&1",
+          "async": true
+        }
+      ]
+    }],
+    "Stop": [{
+      "hooks": [
+        {
+          "type": "command",
+          "command": "$HOME/.claude/plugins/duplo/scripts/remind-complete.sh"
+          
+        },
+        {
+          "type": "command",
+          "command": "python3 $HOME/.duplocloud/bin/duplo_mirror.py >> $HOME/.duplocloud/mirror.log 2>&1",
+          "async": true
+        }
+      ]
+    }]
+  }
+}
