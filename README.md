@@ -12,7 +12,7 @@ Ticket-driven workflow enforcement for Claude Code. Integrates with DuploCloud A
 Clone this repo and run the install script:
 
 ```bash
-git clone git@github.com:duplocloud-internal/duplo-claude-plugin.git ~/.claude/plugins/duplo
+git clone git@github.com:duplocloud/duplo-claude-plugin.git ~/.claude/plugins/duplo
 ~/.claude/plugins/duplo/scripts/install-bin.sh
 ```
 
