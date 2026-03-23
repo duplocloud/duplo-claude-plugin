@@ -8,13 +8,13 @@ Follow these steps in order:
 
 **Step 1 — Check active ticket:**
 
-```bash
-python3 ~/.duplocloud/bin/duplo_ticket.py --check-project
-```
+Read `.duplocloud/state.json`.
 
-- If exit code is **3**: tell the user "No active project found. Please run `/duplo:activate_project` first." and stop.
+- If `workspace_id` or `active_ticket_name` is missing: tell the user:
+  > "No active ticket found. Please run `/duplo:activate_ticket` first."
+  Then stop.
 
-Check that `active_ticket_name` exists in state — the summary is scoped to the **current active ticket only**. Do not summarise work from previous tickets or earlier sessions.
+Capture `workspace_id` and `active_ticket_name`. The summary is scoped to the **current active ticket only**. Do not summarise work from previous tickets or earlier sessions.
 
 **Step 2 — Generate the summary:**
 
@@ -53,13 +53,10 @@ Unresolved issues, pending questions, or follow-up actions still needed.
 
 **Step 3 — Save to platform:**
 
-Pipe the summary directly to the API via stdin (do NOT use the Write tool or create a local file):
+Call `mcp__duplo-helpdesk__Ticket_save_summary` with:
+- `workspaceId = workspace_id`
+- `ticketName = active_ticket_name`
+- Body: `{ "summary": "<summary content from Step 2>" }`
 
-```bash
-python3 ~/.duplocloud/bin/duplo_ticket.py --save-summary << 'SUMMARY_EOF'
-<summary content from Step 2>
-SUMMARY_EOF
-```
-
-- If exit code is **0**: tell the user "Summary saved to the ticket."
-- If exit code is **1**: show the error and stop.
+- On success: tell the user "Summary saved to the ticket."
+- On error (tool not found): the backend may need to be rebuilt and the MCP swagger refreshed. Tell the user the summary content so they can save it manually if needed.

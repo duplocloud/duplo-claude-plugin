@@ -27,20 +27,15 @@ Skills read and write this file directly using Claude's file tools. No Python re
 ```json
 {
   "workspace_id": "string",
-  "workspace_name": "string",
   "project_id": "string",
   "project_name": "string",
-  "active_ticket_name": "string",
-  "active_ticket_title": "string",
-  "active_ticket_type": "spec_creation | plan_execution",
-  "spec_ticket_id": "string",
-  "plan_ticket_id": "string"
+  "active_ticket_name": "string"
 }
 ```
 
 If state is missing (`project_id` or `workspace_id` absent):
 - Do NOT attempt to re-activate automatically.
-- Tell the user: "Session state is missing. Please run `/duplo:activate_ticket` to restore context before continuing."
+- Tell the user: "Session state is missing. Please run `/duplo:activate_project` to restore context before continuing."
 - Stop and wait.
 
 ## Ticket Lifecycle

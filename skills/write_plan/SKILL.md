@@ -8,33 +8,27 @@ Read and follow the brainstorming approach described in `skills/write_plan/writi
 
 Follow these steps in order:
 
-**Step 0 — Verify spec ticket is active:**
+**Step 0 — Verify project is active:**
 
-Run:
-```bash
-python3 -c "import json,sys; d=json.load(open('.duplocloud/state.json')); sys.exit(0 if d.get('spec_ticket_id') else 1)" 2>/dev/null
-```
+Read `.duplocloud/state.json`.
 
-- Exit 0: continue to Step 1.
-- Any other result (exit 1 or file missing): stop and tell the user:
-  > "No active spec ticket found. Please run `/duplo:activate_ticket` first."
+- If `project_id` is absent or file missing: stop and tell the user:
+  > "No active project found. Please run `/duplo:activate_project` first."
 
-**Step 1 — Fetch the approved spec for context:**
+Capture `project_id`.
 
-```bash
-python3 ~/.duplocloud/bin/duplo_ticket.py --get-spec
-```
+**Step 1 — Fetch the spec for context:**
 
-Read the spec content — it provides the requirements and scope that the plan must implement.
+Call `mcp__duplo-helpdesk__Projects_get` with `id = project_id`.
+
+Extract `spec.content` and `plan` from the response. The spec provides requirements and scope that the plan must implement.
 
 **Step 2 — Fetch current plan content:**
 
-```bash
-python3 ~/.duplocloud/bin/duplo_ticket.py --get-plan
-```
+Use the `plan` field extracted in Step 1.
 
-- If the output is **empty**: proceed to Step 2a.
-- If the output has **content**: proceed to Step 2b.
+- If `plan` is **empty or null**: proceed to Step 2a.
+- If `plan` has **content**: proceed to Step 2b.
 
 **Step 2a — Empty plan: gather requirements:**
 
@@ -42,6 +36,7 @@ Ask the user one open-ended high-level question:
 > "The spec is loaded. What aspects of the implementation would you like to focus on, or shall I draft a complete plan from the spec?"
 
 Ask clarifying questions **one at a time** (see writing-plans.md) until you have enough to draft a plan.
+
 Then proceed to Step 3.
 
 **Step 2b — Non-empty plan: review and iterate:**
@@ -53,42 +48,33 @@ Ask clarifying questions one at a time to understand what needs to change. Then 
 
 **Step 3 — Draft the plan:**
 
-Write a well-structured implementation plan based on the spec and the user's answers, following the format in writing-plans.md. Save it locally:
-
-```bash
-# Write the plan content to .duplocloud/plan.md
-```
+Write a well-structured implementation plan based on the spec and the user's answers, following the format in writing-plans.md.
 
 Show the draft to the user, then ask:
 > "Does this draft look good, or would you like changes?"
 
-- If the user requests **changes**: make the edits, save to `.duplocloud/plan.md` again, and re-ask.
+- If the user requests **changes**: make the edits and re-ask.
 - If the user says **good**: proceed to Step 4.
 
 **Step 4 — Confirm and save to platform:**
 
 Ask the user:
 > "The plan looks good! How would you like to proceed?"
-> 1. **Save** — push content to the platform (stays in Draft)
-> 2. **Save and Approve** — push content and mark the plan as Approved
-> 3. **Cancel** — keep the local draft only, don't push
+> 1. **Save** — push content to the platform
+> 2. **Cancel** — don't push
 
 - If **Save**:
 
-```bash
-python3 ~/.duplocloud/bin/duplo_ticket.py --save-plan --plan-file .duplocloud/plan.md
-```
+  Call `mcp__duplo-helpdesk__Projects_patch` with `id = project_id` and body:
+  ```json
+  {
+    "plan": "<plan content as markdown string>"
+  }
+  ```
 
-  - Exit 0: tell the user "Plan saved to the DuploCloud platform (Draft)."
-  - Exit 1: show the error to the user.
+  Note: `plan` is a plain string field, not a nested object like `spec`.
 
-- If **Save and Approve**:
+  - On success: tell the user "Plan saved to the DuploCloud platform."
+  - On error: show the error to the user.
 
-```bash
-python3 ~/.duplocloud/bin/duplo_ticket.py --save-plan --plan-file .duplocloud/plan.md --approve
-```
-
-  - Exit 0: tell the user "Plan saved and approved on the DuploCloud platform."
-  - Exit 1: show the error to the user.
-
-- If **Cancel**: stop — the local draft remains at `.duplocloud/plan.md`.
+- If **Cancel**: stop — the draft is visible in this conversation but not saved.
