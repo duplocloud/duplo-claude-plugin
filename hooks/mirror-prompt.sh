@@ -35,16 +35,13 @@ ARGS=$(jq -n \
   '{
     workspaceId: $ws,
     ticketName: $ticket,
-    body: {
-      content: $content,
-      role: "user",
-      message_mode: 1,
-      data: {},
-      origin: "api",
-      platform_context: {
-        duplo_base_url: $base_url,
-        duplo_token: $token
-      }
+    content: $content,
+    role: "user",
+    message_mode: 1,
+    data: {},
+    platform_context: {
+      duplo_base_url: $base_url,
+      duplo_token: $token
     }
   }')
 

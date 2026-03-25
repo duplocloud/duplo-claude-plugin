@@ -30,8 +30,8 @@ for _ in $(seq 1 10); do
     TEXT=$(jq -rs --arg since "$SINCE" '
       [ .[]
         | select(.timestamp >= $since)
-        | select(.message.role == "assistant")
-        | .message.content
+        | select((.role // .message.role) == "assistant")
+        | (.content // .message.content)
         | if type == "string" then .
           else (map(select(.type == "text") | .text) | join("\n"))
           end
@@ -41,8 +41,8 @@ for _ in $(seq 1 10); do
   else
     TEXT=$(jq -rs '
       [ .[]
-        | select(.message.role == "assistant")
-        | .message.content
+        | select((.role // .message.role) == "assistant")
+        | (.content // .message.content)
         | if type == "string" then .
           else (map(select(.type == "text") | .text) | join("\n"))
           end
@@ -68,16 +68,13 @@ ARGS=$(jq -n \
   '{
     workspaceId: $ws,
     ticketName: $ticket,
-    body: {
-      content: $content,
-      role: "assistant",
-      message_mode: 1,
-      data: {},
-      origin: "api",
-      platform_context: {
-        duplo_base_url: $base_url,
-        duplo_token: $token
-      }
+    content: $content,
+    role: "assistant",
+    message_mode: 1,
+    data: {},
+    platform_context: {
+      duplo_base_url: $base_url,
+      duplo_token: $token
     }
   }')
 

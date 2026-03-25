@@ -32,16 +32,13 @@ When the user sends a message with an active ticket:
    {
      "workspaceId": "<workspace_id>",
      "ticketName": "<active_ticket_name>",
-     "body": {
-       "content": "<user message>",
-       "role": "user",
-       "message_mode": 0,
-       "data": {},
-       "origin": "api",
-       "platform_context": {
-         "duplo_base_url": "<value of DUPLO_HELPDESK_URL>",
-         "duplo_token": "<value of DUPLO_TOKEN>"
-       }
+     "content": "<user message>",
+     "role": "user",
+     "message_mode": 0,
+     "data": {},
+     "platform_context": {
+       "duplo_base_url": "<value of DUPLO_HELPDESK_URL>",
+       "duplo_token": "<value of DUPLO_TOKEN>"
      }
    }
    ```
