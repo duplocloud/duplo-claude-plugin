@@ -2,9 +2,9 @@
   "mcpServers": {
     "duplo-helpdesk": {
       "type": "http",
-      "url": "http://localhost:8000/mcp",
+      "url": "${DUPLO_HELPDESK_URL}/mcp",
       "headers": {
-        "Authorization": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIiLCJpc3MiOiJkdXBsby1hdXRoLXNlcnZpY2UiLCJlbWFpbCI6Im5pa2hpbC5uYW1iaWFyQGR1cGxvY2xvdWQubmV0IiwiZHVwbG9jbG91ZC5uZXQvYXV0aC91c2VybmFtZSI6Im5pa2hpbC5uYW1iaWFyQGR1cGxvY2xvdWQubmV0IiwiZHVwbG9jbG91ZC5uZXQvYXV0aC9vbmJlaGFsZm9mIjoibmlraGlsLm5hbWJpYXJAZHVwbG9jbG91ZC5uZXQiLCJkdXBsb2Nsb3VkLm5ldC9hdXRoL3JlYWRPbmx5IjoiRmFsc2UiLCJkdXBsb2Nsb3VkLm5ldC9hdXRoL3JvbGVzIjoiW1wiQWRtaW5pc3RyYXRvclwiXSIsImR1cGxvY2xvdWQubmV0L2F1dGgvcGVybWlzc2lvbnMiOiJbXSIsImR1cGxvY2xvdWQubmV0L2F1dGgvdGVuYW50QWNjZXNzIjoiW10iLCJleHAiOjE3NzM5MzYxNjl9.IP4ZCIZ5X0osCHCTYat0GcVCLXrDuPobQQJNhd_KKlA"
+        "Authorization": "Bearer ${DUPLO_TOKEN}"
       }
     }
   }
