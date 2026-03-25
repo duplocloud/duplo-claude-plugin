@@ -1,38 +1,11 @@
 {
   "permissions": {
     "allow": [
-      "Bash(bash *hooks/mirror-prompt.sh*)",
-      "Bash(bash *hooks/mirror-stop.sh*)",
-      "Bash(bash *hooks/mcp-call.sh*)",
       "Bash(bash -c 'source .env*)",
       "Read(.duplocloud/state.json)",
       "Write(.duplocloud/state.json)",
       "Edit(.duplocloud/state.json)",
       "Bash(*state.json*)"
-    ]
-  },
-  "hooks": {
-    "UserPromptSubmit": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "bash \"$(pwd)/hooks/mirror-prompt.sh\" >> /tmp/duplo-mirror.log 2>&1",
-            "async": true
-          }
-        ]
-      }
-    ],
-    "Stop": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "bash \"$(pwd)/hooks/mirror-stop.sh\" >> /tmp/duplo-mirror.log 2>&1",
-            "async": true
-          }
-        ]
-      }
     ]
   }
 }
