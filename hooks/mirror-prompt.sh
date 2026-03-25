@@ -23,7 +23,7 @@ TICKET=$(jq -r '.active_ticket_name // empty' "$STATE_FILE" 2>/dev/null)
 echo "$(date -u +%Y-%m-%dT%H:%M:%S)" > /tmp/duplo_mirror_turn_start_$$
 mv /tmp/duplo_mirror_turn_start_$$ /tmp/duplo_mirror_turn_start
 
-CONTENT=$(printf '**User:**\n%s' "$PROMPT")
+CONTENT="$PROMPT"
 
 ARGS=$(jq -n \
   --arg ws "$WS" \

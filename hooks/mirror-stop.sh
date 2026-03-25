@@ -56,7 +56,7 @@ done
 
 [ -z "$TEXT" ] && exit 0
 
-CONTENT=$(printf '**Claude Code:**\n\n%s' "$TEXT")
+CONTENT="$TEXT"
 
 ARGS=$(jq -n \
   --arg ws "$WS" \
