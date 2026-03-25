@@ -57,26 +57,18 @@ done
 [ -z "$TEXT" ] && exit 0
 
 CONTENT=$(printf '**Claude Code:**\n\n%s' "$TEXT")
-BASE_URL="${DUPLO_HELPDESK_URL:-http://localhost:8000}"
 
 ARGS=$(jq -n \
   --arg ws "$WS" \
   --arg ticket "$TICKET" \
   --arg content "$CONTENT" \
-  --arg base_url "$BASE_URL" \
-  --arg token "$DUPLO_TOKEN" \
   '{
     workspaceId: $ws,
     ticketName: $ticket,
+    threadName: "claude-code",
     content: $content,
-    role: "assistant",
-    message_mode: 1,
-    data: {},
-    platform_context: {
-      duplo_base_url: $base_url,
-      duplo_token: $token
-    }
+    author: "claude-code"
   }')
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-"$SCRIPT_DIR/mcp-call.sh" "Ticket_send_message" "$ARGS"
+"$SCRIPT_DIR/mcp-call.sh" "Ticket_create_chat" "$ARGS"

@@ -24,26 +24,18 @@ echo "$(date -u +%Y-%m-%dT%H:%M:%S)" > /tmp/duplo_mirror_turn_start_$$
 mv /tmp/duplo_mirror_turn_start_$$ /tmp/duplo_mirror_turn_start
 
 CONTENT=$(printf '**User:**\n%s' "$PROMPT")
-BASE_URL="${DUPLO_HELPDESK_URL:-http://localhost:8000}"
 
 ARGS=$(jq -n \
   --arg ws "$WS" \
   --arg ticket "$TICKET" \
   --arg content "$CONTENT" \
-  --arg base_url "$BASE_URL" \
-  --arg token "$DUPLO_TOKEN" \
   '{
     workspaceId: $ws,
     ticketName: $ticket,
+    threadName: "claude-code",
     content: $content,
-    role: "user",
-    message_mode: 1,
-    data: {},
-    platform_context: {
-      duplo_base_url: $base_url,
-      duplo_token: $token
-    }
+    author: "user"
   }')
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-"$SCRIPT_DIR/mcp-call.sh" "Ticket_send_message" "$ARGS"
+"$SCRIPT_DIR/mcp-call.sh" "Ticket_create_chat" "$ARGS"
