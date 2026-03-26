@@ -37,9 +37,15 @@ AGENT_REPLY=$(echo "$INPUT" | python3 -c "
 import json, sys
 d = json.load(sys.stdin)
 resp = d.get('tool_response', '')
-if isinstance(resp, dict):
-    # ToolResult content field
-    print(resp.get('content', ''))
+if isinstance(resp, list):
+    # MCP tool format: list of text blocks directly
+    print(''.join(c.get('text', '') for c in resp if isinstance(c, dict) and c.get('type') == 'text'))
+elif isinstance(resp, dict):
+    content = resp.get('content', '')
+    if isinstance(content, list):
+        print(''.join(c.get('text', '') for c in content if isinstance(c, dict) and c.get('type') == 'text'))
+    else:
+        print(content)
 elif isinstance(resp, str):
     print(resp)
 " 2>/dev/null)

@@ -19,6 +19,16 @@
           }
         ]
       }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash hooks/mirror-stop.sh"
+          }
+        ]
+      }
     ]
   }
 }
