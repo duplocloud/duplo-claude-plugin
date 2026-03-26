@@ -7,5 +7,18 @@
       "Edit(.duplocloud/state.json)",
       "Bash(*state.json*)"
     ]
+  },
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "mcp__duplo-helpdesk__Ticket_send_message",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash hooks/mirror-api.sh"
+          }
+        ]
+      }
+    ]
   }
 }

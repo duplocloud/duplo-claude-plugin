@@ -25,7 +25,7 @@ When the user sends a message with an active ticket:
 
 1. Read the required env values by running:
    ```bash
-   bash -c 'source .env 2>/dev/null; printf "%s\n%s" "$DUPLO_HELPDESK_URL" "$DUPLO_TOKEN"'
+   bash -c 'source .env 2>/dev/null; printf "TOKEN=%s\nURL=%s" "$DUPLO_TOKEN" "$DUPLO_HELPDESK_URL"'
    ```
 2. Call `mcp__duplo-helpdesk__Ticket_send_message` with:
    ```json
@@ -34,6 +34,7 @@ When the user sends a message with an active ticket:
      "ticketName": "<active_ticket_name>",
      "content": "<user message>",
      "role": "user",
+     "origin": "helpdesk",
      "message_mode": 0,
      "data": {},
      "platform_context": {
