@@ -77,7 +77,7 @@ jobs:
 
       - name: Update marketplace.json version
         run: |
-          jq --arg v "${{ inputs.version }}" '.version = $v' \
+          jq --arg v "${{ inputs.version }}" '.plugins[0].version = $v' \
             .claude-plugin/marketplace.json > /tmp/marketplace.json
           mv /tmp/marketplace.json .claude-plugin/marketplace.json
 

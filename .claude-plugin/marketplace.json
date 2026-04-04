@@ -1,19 +1,16 @@
 {
-  "name": "duplo",
-  "displayName": "DuploCloud Plugin",
-  "description": "Ticket-driven workflow enforcement for Claude Code. Integrates with DuploCloud AI Service Desk to manage specs, plans, and execution tasks.",
-  "version": "0.0.0",
-  "publisher": "duplocloud",
-  "author": "nikhil.nambiar@duplocloud.net",
-  "repository": "https://github.com/duplocloud/duplo-claude-plugin",
-  "skills": [
-    "activate_project",
-    "activate_ticket",
-    "ai_planner",
-    "check_mcp",
-    "deactivate",
-    "save_summary",
-    "write_plan",
-    "write_spec"
+  "name": "duplocloud",
+  "plugins": [
+    {
+      "name": "duplo",
+      "displayName": "DuploCloud Plugin",
+      "description": "Ticket-driven workflow enforcement for Claude Code. Integrates with DuploCloud AI Service Desk to manage specs, plans, and execution tasks.",
+      "version": "0.0.0",
+      "author": "nikhil.nambiar@duplocloud.net",
+      "source": {
+        "source": "github",
+        "repo": "duplocloud/duplo-claude-plugin"
+      }
+    }
   ]
 }
