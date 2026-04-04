@@ -1,5 +1,7 @@
 #!/bin/bash
-# Mirror Claude's response to helpdesk ticket conversation (mode=1, no agent call)
+# Mirror Claude's own lifecycle messages to helpdesk ticket (mode=1, no agent call).
+# Skips mirroring when the last action was a Ticket_send_message_streaming or
+# Ticket_send_message call — those conversations are already in the ticket via mode=0.
 
 STATE_FILE=".duplocloud/state.json"
 [ -f "$STATE_FILE" ] || exit 0
@@ -12,7 +14,7 @@ TICKET_NAME=$(python3 -c "import json; d=json.load(open('$STATE_FILE')); print(d
 TRANSCRIPT_PATH=$(python3 -c "import json,sys; d=json.load(sys.stdin); print(d.get('transcript_path',''))" 2>/dev/null)
 [ -f "$TRANSCRIPT_PATH" ] || exit 0
 
-RESPONSE=$(python3 -c "
+RESULT=$(python3 -c "
 import json, sys
 
 transcript_path = sys.argv[1]
@@ -27,7 +29,20 @@ with open(transcript_path) as f:
         except Exception:
             continue
 
-# Find last assistant message
+# Check if the last assistant message used Ticket_send_message_streaming or Ticket_send_message.
+# If so, those conversations are already in the ticket — do not mirror again.
+for msg in reversed(messages):
+    if msg.get('role') == 'assistant':
+        content = msg.get('content', [])
+        if isinstance(content, list):
+            for block in content:
+                if block.get('type') == 'tool_use':
+                    tool = block.get('name', '')
+                    if 'Ticket_send_message' in tool:
+                        sys.exit(1)  # skip — already in ticket
+        break
+
+# Find last assistant message text
 for msg in reversed(messages):
     if msg.get('role') == 'assistant':
         content = msg.get('content', '')
@@ -39,7 +54,7 @@ for msg in reversed(messages):
             print(text)
         break
 " "$TRANSCRIPT_PATH" 2>/dev/null)
-[ -n "$RESPONSE" ] || exit 0
+[ -n "$RESULT" ] || exit 0
 
 source .env 2>/dev/null
 
@@ -51,7 +66,7 @@ print(json.dumps({
     'message_mode': 1,
     'data': {}
 }))
-" "$RESPONSE" 2>/dev/null)
+" "$RESULT" 2>/dev/null)
 [ -n "$BODY" ] || exit 0
 
 curl -s -X POST "http://localhost:60021/v1/aiservicedesk/tickets/$WORKSPACE_ID/$TICKET_NAME/sendMessage" \
