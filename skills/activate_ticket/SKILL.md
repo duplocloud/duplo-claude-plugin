@@ -103,11 +103,7 @@ If `project_id` is present in state:
 Call `mcp__duplo-helpdesk__Projects_get` with `id = project_id`.
 
 From the response extract:
-- `spec.content` → `spec_empty` = true if blank
-- `plan` (string field) → `plan_empty` = true if blank
-- `spec.metaData.approvalState` → `spec_approved` = true if `"Approved"`
-- `plan` approval state if available → `plan_approved`
-- Look for a `stages` or `executionPlan.stages` array → `has_execution_tasks` = true if any stage has tasks
+- `has_execution_tasks` = true if any stage in `execution.stages` has tasks
 
 If `has_execution_tasks` is true, ask the user:
 > "Your project **\<project_name\>** has tasks ready to execute. What would you like to do?
@@ -181,7 +177,22 @@ Which agent should handle this ticket?
 {
   "title": "<user-provided title>",
   "aiAgentId": "<selected agent id>",
-  "workspaceId": "<workspace_id>"
+  "workspaceId": "<workspace_id>",
+  "origin": "api"
+}
+```
+
+**Spec or plan creation ticket** (when `project_ticket_type` is set) — call `mcp__duplo-helpdesk__Ticket_create` with `workspaceId = workspace_id` and body:
+```json
+{
+  "title": "<project_name> — <spec_creation or plan_creation>",
+  "aiAgentId": "<selected agent id>",
+  "workspaceId": "<workspace_id>",
+  "origin": "api",
+  "project": {
+    "id": "<project_id>",
+    "type": "<project_ticket_type>"
+  }
 }
 ```
 
@@ -191,6 +202,7 @@ Which agent should handle this ticket?
   "title": "<task_title>",
   "aiAgentId": "<selected agent id>",
   "workspaceId": "<workspace_id>",
+  "origin": "api",
   "project": {
     "id": "<project_id>",
     "type": "plan_execution",
@@ -253,7 +265,7 @@ Resolve the agent name from the agents list. Tell the user:
 > 1. Continue with **\<agent name\>**
 > 2. Switch agent"
 
-- If user picks **1**: keep current agent. Proceed to Step 8.
+- If user picks **1**: keep current agent. Stop here.
 - If user picks **2**: show the agent list (Step 7b-select).
 
 **If no agent is assigned:**
@@ -276,21 +288,3 @@ Tell the user: "**\<agent name\>** is now assigned."
 
 Then tell the user:
 > "Ticket **\<title\>** is ready. **\<agent name\>** will respond to your messages."
-
----
-
-## Step 8 — Post-activation routing (only if project is active)
-
-If `project_id` is absent from state: stop here.
-
-Use the project data fetched in Step 4a (or fetch via `mcp__duplo-helpdesk__Projects_get` if not already loaded).
-
-| Condition | Action |
-|---|---|
-| `spec_empty` is true | Ask: "This project doesn't have a spec yet. Would you like to start writing one? (y/n)" → if y, follow `skills/write_spec/SKILL.md` |
-| Spec has content, not approved | Ask: "There's a spec draft in progress. Would you like to continue with the spec or move on to the plan? (spec/plan)" → route accordingly |
-| Spec approved, plan not approved | Ask: "The spec is approved — ready to start building the plan? (y/n)" → if y, follow `skills/write_plan/SKILL.md` |
-| Both approved, `has_execution_tasks` | Ask: "Both spec and plan are approved. Would you like to work on a project task? (y/n)" → if y, go back to Step 4b |
-| Both approved, no execution tasks | Tell the user: "Great news — both spec and plan are approved. The project is all set for execution." |
-
-If the user declines any prompt: stop.
