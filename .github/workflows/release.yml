@@ -1,0 +1,115 @@
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to release (e.g. 1.2.0)"
+        required: true
+        type: string
+      prerelease:
+        description: "Mark as pre-release"
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Create Release
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Validate version format
+        run: |
+          if ! echo "${{ inputs.version }}" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "Error: version must be in semver format (e.g. 1.2.0)"
+            exit 1
+          fi
+
+      - name: Check tag does not already exist
+        run: |
+          if git rev-parse "v${{ inputs.version }}" >/dev/null 2>&1; then
+            echo "Error: tag v${{ inputs.version }} already exists"
+            exit 1
+          fi
+
+      - name: Extract release notes from CHANGELOG
+        id: notes
+        run: |
+          VERSION="${{ inputs.version }}"
+          CHANGELOG="CHANGELOG.md"
+
+          # Try to find the section for this exact version first
+          NOTES=$(awk "/^## \[$VERSION\]/{found=1; next} found && /^## /{exit} found{print}" "$CHANGELOG")
+
+          # Fall back to [Unreleased] section if version section not found
+          if [ -z "$NOTES" ]; then
+            NOTES=$(awk '/^## \[Unreleased\]/{found=1; next} found && /^## /{exit} found{print}' "$CHANGELOG")
+          fi
+
+          if [ -z "$NOTES" ]; then
+            NOTES="Release v${VERSION}"
+          fi
+
+          # Write to file to preserve multiline content
+          echo "$NOTES" > release_notes.md
+          echo "Release notes extracted."
+
+      - name: Update CHANGELOG — mark Unreleased as versioned
+        run: |
+          VERSION="${{ inputs.version }}"
+          DATE=$(date +%Y-%m-%d)
+
+          # Replace first occurrence of [Unreleased] with the version + date
+          sed -i "s/## \[Unreleased\]/## [$VERSION] — $DATE/" CHANGELOG.md
+
+          # Add a new [Unreleased] section at the top for future changes
+          sed -i "/^## \[$VERSION\]/i ## [Unreleased]\n\n---\n" CHANGELOG.md
+
+      - name: Commit CHANGELOG update
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add CHANGELOG.md
+          git commit -m "chore: release v${{ inputs.version }}"
+          git push origin HEAD
+
+      - name: Create and push tag
+        run: |
+          git tag "v${{ inputs.version }}"
+          git push origin "v${{ inputs.version }}"
+
+      - name: Build release artifact
+        run: |
+          VERSION="${{ inputs.version }}"
+          ARTIFACT="duplo-claude-plugin-v${VERSION}.zip"
+
+          # Package plugin files — exclude git, env, local state, logs, and dev files
+          zip -r "$ARTIFACT" . \
+            --exclude ".git/*" \
+            --exclude ".env" \
+            --exclude ".env.*" \
+            --exclude ".duplocloud/*" \
+            --exclude "duplo-plugin.log.json" \
+            --exclude ".github/*" \
+            --exclude "*.zip"
+
+          echo "ARTIFACT=$ARTIFACT" >> "$GITHUB_ENV"
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: "v${{ inputs.version }}"
+          name: "v${{ inputs.version }}"
+          body_path: release_notes.md
+          prerelease: ${{ inputs.prerelease }}
+          files: ${{ env.ARTIFACT }}
