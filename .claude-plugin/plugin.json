@@ -1,0 +1,13 @@
+{
+  "name": "duplo",
+  "description": "Ticket-driven workflow for Claude Code. Integrates with DuploCloud AI Service Desk to manage specs, plans, and execution tasks across your infrastructure projects.",
+  "version": "0.0.0",
+  "author": {
+    "name": "DuploCloud",
+    "email": "nikhil.nambiar@duplocloud.net"
+  },
+  "homepage": "https://duplocloud.com",
+  "repository": "https://github.com/duplocloud/duplo-claude-plugin",
+  "license": "Apache-2.0",
+  "keywords": ["duplocloud", "infrastructure", "helpdesk", "tickets", "devops"]
+}
