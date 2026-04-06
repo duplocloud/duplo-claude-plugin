@@ -11,16 +11,5 @@
       "Read(duplo-plugin.log.json)"
     ]
   },
-  "hooks": {
-    "Stop": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "exit 0"
-          }
-        ]
-      }
-    ]
-  }
+  "hooks": {}
 }
