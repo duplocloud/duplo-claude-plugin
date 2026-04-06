@@ -15,7 +15,13 @@
       "homepage": "https://duplocloud.com",
       "repository": "https://github.com/duplocloud/duplo-claude-plugin",
       "license": "Apache-2.0",
-      "keywords": ["duplocloud", "infrastructure", "helpdesk", "tickets", "devops"],
+      "keywords": [
+        "duplocloud",
+        "infrastructure",
+        "helpdesk",
+        "tickets",
+        "devops"
+      ],
       "source": {
         "source": "github",
         "repo": "duplocloud/duplo-claude-plugin"
