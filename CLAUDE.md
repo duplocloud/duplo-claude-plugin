@@ -4,6 +4,31 @@
 
 - Bash(*)
 
+## UX — Tool Call Display
+
+**HARD RULE: Never show raw tool syntax, parameter JSON, or tool responses to the user.**
+
+**HARD RULE: Prerequisite Bash calls (env reads, state reads, UUID generation) must always be issued in the same parallel tool call batch as the MCP tool they serve. Never issue them as separate sequential steps — this creates redundant approval prompts.**
+
+Before each batch of tool calls, print a single friendly status line:
+```
+<action verb> <subject> [<Tool Name>]
+```
+
+Examples:
+```
+Fetching workspaces [Workspaces]
+Creating ticket [Ticket]
+Sending message to agent [Agent]
+Saving project state [State]
+Fetching project details [Project]
+Listing tickets [Tickets]
+```
+
+One status line per logical action — not per tool call. If reading env + calling an MCP tool are part of the same action, print one line and issue both tool calls in parallel.
+
+**Never print tool results, JSON payloads, or raw API responses.** Extract only the meaningful data and present it in plain language or a formatted table.
+
 ## MCP Server
 
 All DuploCloud backend calls go through the **`duplo-helpdesk` MCP server** configured in `.mcp.json`.
