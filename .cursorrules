@@ -1,0 +1,172 @@
+# DuploCloud Plugin — Cursor Rules
+
+## HARD RULES — Read First
+
+**NEVER output raw JSON, API responses, request bodies, or tool parameters in your text.** After any tool call, output only a plain-language result (e.g. "Found 1 workspace." or "Ticket created."). Never echo what the tool returned.
+
+## MCP Server
+
+All DuploCloud backend calls go through the **`duplo-helpdesk` MCP server** configured in `.cursor/mcp.json`.
+Tools are named `duplo-helpdesk_<OperationId>` (e.g. `duplo-helpdesk_Workspaces_get_available`).
+
+Environment variables are interpolated from `.env` via the MCP config:
+- `DUPLO_TOKEN` — Bearer token for API auth
+- `DUPLO_HELPDESK_URL` — Helpdesk server base URL
+
+## UX Rules
+
+### Status lines
+
+Before each tool call, print a conversational status line:
+
+```
+Now let me fetch your available workspaces
+Let me load the project details
+Creating your ticket now
+Sending your message to the agent
+```
+
+Use natural, first-person phrasing. One line per logical action.
+
+### Displaying tool responses
+
+**HARD RULE: Never output raw JSON, request bodies, response payloads, or tool parameters in your text response.**
+
+After every tool call, output only a plain-language result:
+- "Found 2 workspaces."
+- "Ticket created successfully."
+- "Project **projectWeb** is active."
+
+### Auto-selection
+
+When logic auto-selects an item (single result, or matches saved state), always tell the user explicitly:
+
+```
+Auto-selecting 🟢 **<item-name>** — it's the only one available.
+Auto-selecting 🟢 **<item-name>** — matches your saved session.
+```
+
+### Active item highlighting
+
+Always prefix active workspace, project, or ticket names with 🟢 in messages, prompts, and lists. In numbered lists, only the currently active item gets the prefix.
+
+## Local State
+
+Session state is stored in `.duplocloud/state.json`.
+
+**Schema:**
+```json
+{
+  "workspace_id": "string",
+  "project_id": "string",
+  "project_name": "string",
+  "active_ticket_name": "string"
+}
+```
+
+Read state at the start of each command. Write state at the end.
+
+If `workspace_id` is missing and a command requires it:
+- Tell the user: "No active workspace. Please run the activate_project or activate_ticket command first."
+- Stop and wait.
+
+## Agent Communication
+
+**HARD RULE: The AI must never act as an agent replacement.** If an agent call returns no response, an empty response, or an error — display the error and stop. Do not attempt to answer the user's question yourself.
+
+When a ticket is active, **the assigned agent is the sole responder to the user's messages**. The plugin handles ticket lifecycle only (activate, create, close, spec, plan).
+
+When the user sends a message with an active ticket:
+
+1. Read `.duplocloud/state.json` and `.env` to get `workspace_id`, `active_ticket_name`, `DUPLO_TOKEN`, `DUPLO_HELPDESK_URL`.
+2. Call `duplo-helpdesk_Ticket_send_message_streaming` with:
+   ```json
+   {
+     "workspaceId": "<workspace_id>",
+     "ticketName": "<active_ticket_name>",
+     "content": "<user message>",
+     "message_mode": 0,
+     "data": {},
+     "platform_context": {
+       "duplo_base_url": "<DUPLO_HELPDESK_URL>",
+       "duplo_token": "<DUPLO_TOKEN>"
+     }
+   }
+   ```
+3. **Parse the streaming response.** From the SSE events:
+   - **Assemble agent text** — concatenate all `text_delta` values in order.
+   - **Capture canvas files** — collect any `present_file` events (path + content).
+   - Ignore all other event types.
+4. If the assembled text is empty or the call failed:
+   > "Agent not available."
+   Fetch the agent list with `duplo-helpdesk_Workspaces_get_agents` and offer to switch agents.
+   Do not answer the user's original message yourself.
+5. Output the assembled agent text verbatim. Do not add commentary.
+
+If any MCP tool call fails, show the error and stop:
+```
+Error: <error message>
+```
+
+## Ticket Lifecycle
+
+When the user explicitly asks to close a ticket:
+
+1. Ask for confirmation: "Shall I mark this ticket as resolved and close it? (y/n)"
+2. If confirmed — call `duplo-helpdesk_Ticket_put_status` with `{ "status": "closed", "disposition": "resolved" }`.
+3. Remove `active_ticket_name` from state.
+
+**Never close a ticket automatically.** Only close when the user explicitly requests it.
+
+## Ticket Summary
+
+**Never save a summary unless the user explicitly asks.** The only trigger is text like "save summary" or "update summary".
+
+When requested:
+1. Ask for confirmation.
+2. If confirmed — follow the save_summary command.
+
+## MCP Tool Logging
+
+Log every `duplo-helpdesk_*` tool call to `.duplocloud/duplo-plugin.log.json` (gitignored).
+
+**Log entry schema:**
+```json
+{
+  "timestamp": "<ISO 8601 UTC>",
+  "project_name": "<from state or null>",
+  "ticket_name": "<from state or null>",
+  "tool": "<duplo-helpdesk_OperationId>",
+  "request": {},
+  "response": {}
+}
+```
+
+Accumulate entries during the flow and flush at the end. Do not let logging failures block the main flow.
+
+## Commands
+
+Plugin commands are in `.cursor/commands/duplo/`. When a user runs a command, read and follow the corresponding file:
+
+| Command | File |
+|---------|------|
+| activate_project | `.cursor/commands/duplo/activate_project.md` |
+| activate_ticket | `.cursor/commands/duplo/activate_ticket.md` |
+| ai_planner | `.cursor/commands/duplo/ai_planner.md` |
+| write_spec | `.cursor/commands/duplo/write_spec.md` |
+| write_plan | `.cursor/commands/duplo/write_plan.md` |
+| save_summary | `.cursor/commands/duplo/save_summary.md` |
+| deactivate | `.cursor/commands/duplo/deactivate.md` |
+| check_mcp | `.cursor/commands/duplo/check_mcp.md` |
+
+## End of Turn Summary
+
+After every response where meaningful work was done, append:
+
+```
+---
+**Work Done**
+- <bullet: what was done>
+```
+
+Omit for pure Q&A exchanges.
