@@ -4,6 +4,17 @@ description: Activate a DuploCloud project context.
 disable-model-invocation: false
 ---
 
+## Color Coding — HARD RULE
+
+**Always prefix active workspace, project, or ticket names with a 🟢 emoji.** This applies everywhere an active/selected name is displayed — auto-select messages, confirmation prompts, health tables, and list items.
+
+Example:
+> Auto-selecting 🟢 **aws-sample-workspace** — it's the only workspace available.
+
+In lists, only the currently active item gets the 🟢 prefix.
+
+---
+
 Follow these steps in order:
 
 ---
@@ -21,12 +32,14 @@ If the call fails with an auth or connection error, stop and tell the user:
   > "It looks like you don't have any workspaces set up yet. Please create one in the DuploCloud portal first."
   Then stop.
 
-- If only **one** workspace is returned: auto-select it silently. Capture its `id` as `workspace_id`.
+- If only **one** workspace is returned: auto-select it and tell the user:
+  > "Auto-selecting 🟢 **\<workspace name\>** — it's the only workspace available."
+  Capture its `id` as `workspace_id`.
 
 - If **multiple** workspaces and `workspace_id` is present in state:
   - Check whether that `workspace_id` exists in the returned list.
   - If **found**: ask the user:
-    > "You're currently connected to **\<workspace name\>**. Would you like to continue with this workspace? (y/n)"
+    > "You're currently connected to 🟢 **\<workspace name\>**. Would you like to continue with this workspace? (y/n)"
     - **y** → use this workspace. Proceed to Step 2.
     - **n** → show the workspace list (Step 1a).
   - If **not found**: tell the user the previously saved workspace is no longer available, then show the workspace list (Step 1a).
@@ -35,11 +48,12 @@ If the call fails with an auth or connection error, stop and tell the user:
 
 ### Step 1a — Choose a workspace
 
-Show a numbered list using only the workspace **name** (no raw IDs):
+Show a numbered list using only the workspace **name** (no raw IDs). If a workspace matches the `workspace_id` currently in state, prefix it with 🟢:
 ```
 Here are your available workspaces:
-1. <name>
-2. ...
+1. 🟢 <name>   ← currently active
+2. <name>
+...
 ```
 Ask: "Which workspace would you like to use?"
 
@@ -56,13 +70,15 @@ Call `mcp__duplo-helpdesk__Projects_list` with `workspaceId = workspace_id`.
 If the list is empty: tell the user "No projects found in this workspace. Please create a project in the DuploCloud portal first." and stop.
 
 **Case A — only one remote project:**
-- If it matches `project_id` in local state → auto-select silently. Proceed to Step 4.
+- If it matches `project_id` in local state → tell the user:
+  > "Auto-selecting 🟢 **\<name\>** — it matches your saved session."
+  Proceed to Step 4.
 - Otherwise → tell the user:
-  > "Found project: **\<name\>**. Activating it."
-  Auto-select it. Set `project_id` and `project_name`. Proceed to Step 4.
+  > "Auto-selecting 🟢 **\<name\>** — it's the only project available."
+  Set `project_id` and `project_name`. Proceed to Step 4.
 
 **Case B — multiple remote projects, `project_id` present in state AND found in remote list:**
-> "Active project: **\<project_name\>**. Would you like to continue with this project or select a different one?
+> "Active project: 🟢 **\<project_name\>**. Would you like to continue with this project or select a different one?
 > 1. Continue with **\<project_name\>**
 > 2. Select from list"
 - **1** → keep current project. Proceed to Step 4.
@@ -75,11 +91,12 @@ Continue to Step 3.
 
 ## Step 3 — List and select project
 
-Show the user a numbered list:
+Show the user a numbered list. If a project matches the `project_id` currently in state, prefix it with 🟢:
 ```
 Available projects:
-1. <name> — <description or "no description">
-2. ...
+1. 🟢 <name> — <description>   ← currently active
+2. <name> — <description or "no description">
+...
 ```
 Ask: "Which project would you like to activate?"
 
@@ -122,7 +139,7 @@ From the response extract:
 
 Display the health table:
 
-> **Project:** `<project_name>`
+> **Project:** 🟢 **\<project_name\>**
 >
 > | Artifact | Status |
 > |----------|--------|

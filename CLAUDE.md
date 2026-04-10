@@ -1,33 +1,83 @@
 # DuploCloud Plugin
 
+## HARD RULES — Read First
+
+**NEVER output raw JSON, API responses, request bodies, or tool parameters in your text.** This applies to every tool call — MCP or Bash — without exception. After any tool call, output only a plain-language result (e.g. "Found 1 workspace." or "Ticket created."). Never echo what the tool returned.
+
 ## Allowed Tools
 
 - Bash(*)
 
-## UX — Tool Call Display
+## UX — Minimal Tool Call Noise
 
-**HARD RULE: Never show raw tool syntax, parameter JSON, or tool responses to the user.**
+**HARD RULE: The user must only see MCP tool call blocks in the output. Every Bash call is noise — minimize them ruthlessly.**
 
-**HARD RULE: Prerequisite Bash calls (env reads, state reads, UUID generation) must always be issued in the same parallel tool call batch as the MCP tool they serve. Never issue them as separate sequential steps — this creates redundant approval prompts.**
+### Reducing Bash calls
 
-Before each batch of tool calls, print a single friendly status line:
+1. **State + env reads** — When a skill starts and needs both state and env values, read them in a **single** Bash call that writes everything to a temp file. **The only stdout must be the temp file path — nothing else.**
+   ```bash
+   bash -c '
+   TMPF=$(mktemp)
+   cat .duplocloud/state.json >> "$TMPF" 2>/dev/null || echo "{}" >> "$TMPF"
+   source .env 2>/dev/null
+   printf "\nENV_TOKEN=%s\nENV_URL=%s\n" "$DUPLO_TOKEN" "$DUPLO_HELPDESK_URL" >> "$TMPF"
+   echo "$TMPF"
+   '
+   ```
+   The output will be just a path like `/tmp/tmp.abc123`. Then use the `Read` tool to silently read that file — the Read tool contents are not displayed to the user. **Never** issue separate Bash calls for state and env.
+   
+   Give this Bash call a description like `"Loading session"`.
+
+2. **State write + log flush** — At the end of a flow, combine into a **single** Bash call that produces no visible output:
+   ```bash
+   bash -c '
+   printf "%s" "<state_json>" > .duplocloud/state.json
+   LOG_FILE=".duplocloud/duplo-plugin.log.json"
+   ENTRIES="<log_entries_array>"
+   if [ -f "$LOG_FILE" ]; then EXISTING=$(cat "$LOG_FILE"); else EXISTING="[]"; fi
+   python3 -c "import json,sys; e=json.loads(sys.argv[1]); e.extend(json.loads(sys.argv[2])); print(json.dumps(e,indent=2))" "$EXISTING" "$ENTRIES" > "$LOG_FILE"
+   '
+   ```
+   Give this Bash call a description like `"Saving session"`.
+
+3. **Mid-flow state writes** — If you must write state mid-flow (e.g. after workspace selection before listing projects), batch it in the same parallel tool call as the next MCP call.
+
+4. **No standalone Bash calls** — Every Bash call must either be the single init read at the start, the single flush at the end, or batched in parallel with an MCP call. If you find yourself about to issue a Bash call alone, stop and find something to batch it with.
+
+### Status lines
+
+Before each tool call batch, print a conversational status line:
+
 ```
-<action verb> <subject> [<Tool Name>]
+Now let me fetch your available workspaces
+Let me load the project details
+Creating your ticket now
+Sending your message to the agent
 ```
 
-Examples:
+Use natural, first-person phrasing — not terse labels. One line per logical action, not per tool call.
+
+### Displaying tool responses
+
+**HARD RULE: Never output raw JSON, request bodies, response payloads, or tool parameters in your text response — for any tool, GET or write.**
+
+After every tool call, output only a plain-language result:
+- "Found 2 workspaces."
+- "Ticket created successfully."
+- "Project **projectWeb** is active."
+
+Extract only the meaningful data. Never echo the API response structure.
+
+### Auto-selection
+
+When logic auto-selects an item (single result, or matches saved state), always tell the user explicitly:
+
 ```
-Fetching workspaces [Workspaces]
-Creating ticket [Ticket]
-Sending message to agent [Agent]
-Saving project state [State]
-Fetching project details [Project]
-Listing tickets [Tickets]
+Auto-selecting <item-name> — it's the only one available.
+Auto-selecting <item-name> — matches your saved session.
 ```
 
-One status line per logical action — not per tool call. If reading env + calling an MCP tool are part of the same action, print one line and issue both tool calls in parallel.
-
-**Never print tool results, JSON payloads, or raw API responses.** Extract only the meaningful data and present it in plain language or a formatted table.
+Never silently select without telling the user.
 
 ## MCP Server
 
@@ -52,10 +102,7 @@ When a ticket is active, **the assigned agent is the sole responder to the user'
 
 When the user sends a message with an active ticket:
 
-1. Read the required env values by running:
-   ```bash
-   bash -c 'source .env 2>/dev/null; printf "TOKEN=%s\nURL=%s" "$DUPLO_TOKEN" "$DUPLO_HELPDESK_URL"'
-   ```
+1. Read state + env in a single Bash call (see "State + env reads" above). Extract `workspace_id`, `active_ticket_name`, `DUPLO_TOKEN`, and `DUPLO_HELPDESK_URL`.
 2. Call `mcp__duplo-helpdesk__Ticket_send_message_streaming` with:
    ```json
    {
@@ -163,31 +210,9 @@ When saving is explicitly requested:
 
 ## MCP Tool Logging
 
-All MCP tool calls and their responses must be logged to `duplo-plugin.log.json` in the project root (same directory as this CLAUDE.md). This file is gitignored.
+All MCP tool calls and their responses must be logged to `.duplocloud/duplo-plugin.log.json`. This file is gitignored.
 
-**Log every `mcp__duplo-helpdesk__*` tool call** — both the request and the response.
-
-After each MCP tool call, append an entry to `duplo-plugin.log.json` using bash:
-
-```bash
-bash -c '
-LOG_FILE="duplo-plugin.log.json"
-ENTRY='"'"'<json entry>'"'"'
-# Read existing array or start fresh
-if [ -f "$LOG_FILE" ]; then
-  EXISTING=$(cat "$LOG_FILE")
-else
-  EXISTING="[]"
-fi
-python3 -c "
-import json, sys
-existing = json.loads(sys.argv[1])
-entry = json.loads(sys.argv[2])
-existing.append(entry)
-print(json.dumps(existing, indent=2))
-" "$EXISTING" "$ENTRY" > "$LOG_FILE"
-'
-```
+**Log every `mcp__duplo-helpdesk__*` tool call** — both the request and the response. Accumulate entries in memory during the flow. Flush them in the single end-of-flow Bash call (combined with state write — see "State write + log flush" above).
 
 **Log entry schema:**
 ```json
@@ -201,9 +226,8 @@ print(json.dumps(existing, indent=2))
 }
 ```
 
-- `project_name` and `ticket_name` — read from `.duplocloud/state.json` at the time of the call. Use `null` if absent.
 - `request` — the full parameters passed to the tool.
-- `response` — the full tool result (truncate individual string values to 2000 characters if they are very long to keep the file readable).
+- `response` — the full tool result (truncate individual string values to 2000 chars).
 - Timestamp format: `2006-01-02T15:04:05Z` (UTC).
 
 **Do not let logging failures block the main flow.** If the log write fails, continue silently.

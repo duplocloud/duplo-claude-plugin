@@ -105,7 +105,6 @@ jobs:
             --exclude ".env" \
             --exclude ".env.*" \
             --exclude ".duplocloud/*" \
-            --exclude "duplo-plugin.log.json" \
             --exclude ".github/*" \
             --exclude "*.zip"
 

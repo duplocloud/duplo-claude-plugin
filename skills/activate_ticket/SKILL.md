@@ -4,6 +4,17 @@ description: Open or resume a helpdesk ticket. Tickets are independent of projec
 disable-model-invocation: false
 ---
 
+## Color Coding — HARD RULE
+
+**Always prefix active workspace, project, or ticket names with a 🟢 emoji.** This applies everywhere an active/selected name is displayed — auto-select messages, confirmation prompts, resume prompts, and list items.
+
+Example:
+> You were last working on 🟢 **Fix login bug**. Would you like to pick up where you left off?
+
+In lists, only the currently active item gets the 🟢 prefix.
+
+---
+
 Follow these steps in order:
 
 ---
@@ -18,12 +29,14 @@ Call `mcp__duplo-helpdesk__Workspaces_get_available` to get the list of availabl
   > "It looks like you don't have any workspaces set up yet. Please create one in the DuploCloud portal first."
   Then stop.
 
-- If only **one** workspace is returned: auto-select it silently. Capture its `id` as `workspace_id`.
+- If only **one** workspace is returned: auto-select it and tell the user:
+  > "Auto-selecting 🟢 **\<workspace name\>** — it's the only workspace available."
+  Capture its `id` as `workspace_id`.
 
 - If **multiple** workspaces and `workspace_id` is present in state:
   - Check whether that `workspace_id` exists in the returned list.
   - If **found**: ask the user:
-    > "You're currently connected to **\<workspace name\>**. Would you like to continue with this workspace? (y/n)"
+    > "You're currently connected to 🟢 **\<workspace name\>**. Would you like to continue with this workspace? (y/n)"
     - **y** → use this workspace. Proceed to Step 1b.
     - **n** → show the workspace list (Step 1a).
   - If **not found**: tell the user the previously saved workspace is no longer available, then show the workspace list (Step 1a).
@@ -32,11 +45,12 @@ Call `mcp__duplo-helpdesk__Workspaces_get_available` to get the list of availabl
 
 ### Step 1a — Choose a workspace
 
-Show a numbered list using only the workspace **name** (no raw IDs):
+Show a numbered list using only the workspace **name** (no raw IDs). If a workspace matches the `workspace_id` currently in state, prefix it with 🟢:
 ```
 Here are your available workspaces:
-1. <name>
-2. ...
+1. 🟢 <name>   ← currently active
+2. <name>
+...
 ```
 Ask: "Which workspace would you like to use?"
 
@@ -64,7 +78,7 @@ Write the updated state silently. Step 3 will use this cached list.
 ## Step 2 — Resume or open a ticket?
 
 If `active_ticket_name` is present in state (and workspace has not changed), look up the ticket title from the cached `tickets` list. Ask the user:
-> "You were last working on **\<title\>**. Would you like to pick up where you left off? (y/n)"
+> "You were last working on 🟢 **\<title\>**. Would you like to pick up where you left off? (y/n)"
 - **y** → go to Step 6 (load past context).
 - **n** → continue to Step 3.
 
@@ -78,10 +92,12 @@ Use the cached `tickets` array from state. Filter to `open` or `inProgress` stat
 
 Display using the ticket **title** as the primary label. Map status values to friendly labels: `open` → "Open", `inProgress` → "In Progress". Do not show raw ticket name IDs.
 
+If a ticket matches the `active_ticket_name` currently in state, prefix it with 🟢:
 ```
 Here are your open tickets:
-1. <title> — <friendly status>
-2. ...
+1. 🟢 <title> — In Progress   ← currently active
+2. <title> — Open
+...
 N+1. Start a new ticket
 ```
 
@@ -287,4 +303,4 @@ Call `mcp__duplo-helpdesk__Ticket_put_assignee` with `workspaceId = workspace_id
 Tell the user: "**\<agent name\>** is now assigned."
 
 Then tell the user:
-> "Ticket **\<title\>** is ready. **\<agent name\>** will respond to your messages."
+> "Ticket 🟢 **\<title\>** is ready. **\<agent name\>** will respond to your messages."
