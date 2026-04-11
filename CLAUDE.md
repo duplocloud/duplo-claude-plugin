@@ -14,24 +14,16 @@
 
 ### Reducing Bash calls
 
-1. **State + env reads** — When a skill starts and needs both state and env values, read them in a **single** Bash call that writes everything to a temp file. **The only stdout must be the temp file path — nothing else.**
-   ```bash
-   bash -c '
-   TMPF=$(mktemp)
-   cat .duplocloud/state.json >> "$TMPF" 2>/dev/null || echo "{}" >> "$TMPF"
-   source .env 2>/dev/null
-   printf "\nENV_TOKEN=%s\nENV_URL=%s\n" "$DUPLO_TOKEN" "$DUPLO_HELPDESK_URL" >> "$TMPF"
-   echo "$TMPF"
-   '
-   ```
-   The output will be just a path like `/tmp/tmp.abc123`. Then use the `Read` tool to silently read that file — the Read tool contents are not displayed to the user. **Never** issue separate Bash calls for state and env.
-   
-   Give this Bash call a description like `"Loading session"`.
+1. **State + env reads** — Use the `Read` tool to read `.duplocloud/state.toon` and `.env` directly. The Read tool is **silent** — its contents are not displayed to the user. No Bash call needed.
+
+   Read both files at the start of a skill flow (can be done in parallel):
+   - `.duplocloud/state.toon` — parse `key: value` lines for `workspace_id`, `project_id`, etc.
+   - `.env` — parse `export KEY="value"` lines for `DUPLO_TOKEN`, `DUPLO_HELPDESK_URL`
 
 2. **State write + log flush** — At the end of a flow, combine into a **single** Bash call that produces no visible output:
    ```bash
    bash -c '
-   printf "%s" "<state_json>" > .duplocloud/state.json
+   printf "%s" "<state_toon>" > .duplocloud/state.toon
    LOG_FILE=".duplocloud/duplo-plugin.log.json"
    ENTRIES="<log_entries_array>"
    if [ -f "$LOG_FILE" ]; then EXISTING=$(cat "$LOG_FILE"); else EXISTING="[]"; fi
@@ -102,7 +94,7 @@ When a ticket is active, **the assigned agent is the sole responder to the user'
 
 When the user sends a message with an active ticket:
 
-1. Read state + env in a single Bash call (see "State + env reads" above). Extract `workspace_id`, `active_ticket_name`, `DUPLO_TOKEN`, and `DUPLO_HELPDESK_URL`.
+1. Read `.duplocloud/state.toon` and `.env` using the Read tool (silent, no Bash needed). Extract `workspace_id`, `active_ticket_name`, `DUPLO_TOKEN`, and `DUPLO_HELPDESK_URL`.
 2. Call `duplo-helpdesk::Ticket_send_message_streaming` with:
    ```json
    {
@@ -157,26 +149,30 @@ Then stop and wait.
 
 ## Local State
 
-Session state is stored in `.duplocloud/state.json` in the current working directory.
+Session state is stored in `.duplocloud/state.toon` (TOON format) in the current working directory.
 
 **Always write state using bash, never the Write or Edit tools.** This keeps the output silent. Use:
 ```bash
-printf '%s' '<json>' > .duplocloud/state.json
-```
-Or with a variable:
-```bash
-printf '%s' "$STATE_JSON" > .duplocloud/state.json
+printf '%s' '<toon content>' > .duplocloud/state.toon
 ```
 
-**Schema:**
-```json
-{
-  "workspace_id": "string",
-  "project_id": "string",
-  "project_name": "string",
-  "active_ticket_name": "string"
-}
+**Schema (TOON format):**
 ```
+workspace_id: <string>
+project_id: <string>
+project_name: <string>
+active_ticket_name: <string>
+```
+
+**Example:**
+```
+workspace_id: 69c13422c25d7d1dc686defa
+project_id: 69d5f9544b20f07d1a62f4ed
+project_name: projectWeb
+active_ticket_name: AWSSAMPLEWORKSPACE-25
+```
+
+To omit optional fields, simply leave them out of the file.
 
 `project_id` and `project_name` are optional — tickets are independent of projects. Only `workspace_id` is required for ticket operations.
 
@@ -195,7 +191,7 @@ When the user explicitly asks to close the ticket (e.g. "close the ticket", "mar
    ```json
    { "status": "closed", "disposition": "resolved" }
    ```
-3. Remove `active_ticket_name` from `.duplocloud/state.json` (stops mirroring immediately).
+3. Remove `active_ticket_name` from `.duplocloud/state.toon` (stops mirroring immediately).
 4. Tell the user the ticket has been closed.
 
 **Never close or update the ticket status automatically.** Do not interpret "all done", "finished", "that's it", or similar as a request to close the ticket unless the user explicitly asks to close it.

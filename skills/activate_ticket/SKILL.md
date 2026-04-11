@@ -21,7 +21,7 @@ Follow these steps in order:
 
 ## Step 1 — Resolve workspace
 
-Read `.duplocloud/state.json` (file may not exist). Note `workspace_id`, `active_ticket_name`, `project_id`, `project_name` if present.
+Read `.duplocloud/state.toon` (file may not exist). Note `workspace_id`, `active_ticket_name`, `project_id`, `project_name` if present.
 
 Call `duplo-helpdesk::Workspaces_get_available` to get the list of available workspaces.
 
@@ -64,11 +64,11 @@ After workspace is resolved (whether auto-selected or chosen via Step 1a):
 
 Call `duplo-helpdesk::Ticket_list` with `workspaceId = workspace_id`.
 
-Store the results in `.duplocloud/state.json` under a `tickets` field:
-```json
-"tickets": [
-  { "name": "<ticketName>", "title": "<title>", "status": "<status>", "aiAgentId": "<aiAgentId or null>" }
-]
+Store the results in `.duplocloud/state.toon` under a `tickets` field:
+```
+tickets[N]{name,title,status,aiAgentId}:
+  <ticketName>,<title>,<status>,<aiAgentId or null>
+  ...
 ```
 
 Write the updated state silently. Step 3 will use this cached list.
@@ -253,15 +253,14 @@ Call `duplo-helpdesk::Ticket_get_messages` with `workspaceId = workspace_id`, `t
 
 ## Step 7 — Save state
 
-Write `.duplocloud/state.json` silently, preserving any existing `project_id` and `project_name` fields:
-```json
-{
-  "workspace_id": "<workspace_id>",
-  "project_id": "<project_id if present, else omit>",
-  "project_name": "<project_name if present, else omit>",
-  "active_ticket_name": "<active_ticket_name>",
-  "tickets": [...]
-}
+Write `.duplocloud/state.toon` silently, preserving any existing `project_id` and `project_name` fields:
+```
+workspace_id: <workspace_id>
+project_id: <project_id if present, else omit>
+project_name: <project_name if present, else omit>
+active_ticket_name: <active_ticket_name>
+tickets[N]{name,title,status,aiAgentId}:
+  <row per ticket>
 ```
 
 ---

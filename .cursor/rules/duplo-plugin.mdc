@@ -57,19 +57,25 @@ Always prefix active workspace, project, or ticket names with 🟢 in messages, 
 
 ## Local State
 
-Session state is stored in `.duplocloud/state.json`.
+Session state is stored in `.duplocloud/state.toon` (TOON format — Token-Oriented Object Notation).
 
 **Schema:**
-```json
-{
-  "workspace_id": "string",
-  "project_id": "string",
-  "project_name": "string",
-  "active_ticket_name": "string"
-}
+```
+workspace_id: <string>
+project_id: <string>
+project_name: <string>
+active_ticket_name: <string>
 ```
 
-Read state at the start of each command. Write state at the end.
+**Example:**
+```
+workspace_id: 69c13422c25d7d1dc686defa
+project_id: 69d5f9544b20f07d1a62f4ed
+project_name: projectWeb
+active_ticket_name: AWSSAMPLEWORKSPACE-25
+```
+
+Read state at the start of each command. Write state at the end. To omit optional fields, leave them out.
 
 If `workspace_id` is missing and a command requires it:
 - Tell the user: "No active workspace. Please run the activate_project or activate_ticket command first."
@@ -83,7 +89,7 @@ When a ticket is active, **the assigned agent is the sole responder to the user'
 
 When the user sends a message with an active ticket:
 
-1. Read `.duplocloud/state.json` and `.env` to get `workspace_id`, `active_ticket_name`, `DUPLO_TOKEN`, `DUPLO_HELPDESK_URL`.
+1. Read `.duplocloud/state.toon` and `.env` to get `workspace_id`, `active_ticket_name`, `DUPLO_TOKEN`, `DUPLO_HELPDESK_URL`.
 2. Call `duplo-helpdesk::Ticket_send_message_streaming` with:
    ```json
    {

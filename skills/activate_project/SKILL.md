@@ -21,7 +21,7 @@ Follow these steps in order:
 
 ## Step 1 — Resolve workspace
 
-Read `.duplocloud/state.json` (file may not exist). Note `workspace_id`, `project_id`, `project_name` if present.
+Read `.duplocloud/state.toon` (file may not exist). Note `workspace_id`, `project_id`, `project_name` if present.
 
 Call `duplo-helpdesk::Workspaces_get_available` to get the list of available workspaces.
 
@@ -106,13 +106,11 @@ Wait for selection. Capture `id` → `project_id`, `name` → `project_name`.
 
 ## Step 4 — Save state
 
-Write `.duplocloud/state.json` silently using bash, preserving any existing `active_ticket_name` and `tickets` fields if the workspace has not changed:
-```json
-{
-  "workspace_id": "<workspace_id>",
-  "project_id": "<project_id>",
-  "project_name": "<project_name>"
-}
+Write `.duplocloud/state.toon` silently using bash, preserving any existing `active_ticket_name` and `tickets` fields if the workspace has not changed:
+```
+workspace_id: <workspace_id>
+project_id: <project_id>
+project_name: <project_name>
 ```
 
 Create the `.duplocloud/` directory first if it does not exist.

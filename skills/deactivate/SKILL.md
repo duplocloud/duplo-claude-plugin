@@ -1,6 +1,6 @@
 ---
 name: deactivate
-description: Clear the active DuploCloud project context (state.json)
+description: Clear the active DuploCloud project context (state.toon)
 disable-model-invocation: true
 ---
 
@@ -11,7 +11,7 @@ Deactivate DuploCloud mode by clearing the current project and ticket context.
 1. Confirm with the user: **"This will clear your active project and ticket context. Continue? (y/n)"**
 
 2. If yes:
-   - Delete `.duplocloud/state.json` if it exists in the current working directory
+   - Delete `.duplocloud/state.toon` if it exists in the current working directory
 
 3. Confirm: **"DuploCloud context cleared. Run `/duplo:activate_project` to start a new session."**
 

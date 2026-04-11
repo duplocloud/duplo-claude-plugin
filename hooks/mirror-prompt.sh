@@ -1,11 +1,11 @@
 #!/bin/bash
 # Mirror user prompt to helpdesk ticket conversation (mode=1, no agent call)
 
-STATE_FILE=".duplocloud/state.json"
+STATE_FILE=".duplocloud/state.toon"
 [ -f "$STATE_FILE" ] || exit 0
 
-WORKSPACE_ID=$(python3 -c "import json; d=json.load(open('$STATE_FILE')); print(d.get('workspace_id',''))" 2>/dev/null)
-TICKET_NAME=$(python3 -c "import json; d=json.load(open('$STATE_FILE')); print(d.get('active_ticket_name',''))" 2>/dev/null)
+WORKSPACE_ID=$(grep '^workspace_id:' "$STATE_FILE" 2>/dev/null | sed 's/^workspace_id: *//')
+TICKET_NAME=$(grep '^active_ticket_name:' "$STATE_FILE" 2>/dev/null | sed 's/^active_ticket_name: *//')
 [ -n "$WORKSPACE_ID" ] && [ -n "$TICKET_NAME" ] || exit 0
 
 PROMPT=$(python3 -c "import json,sys; d=json.load(sys.stdin); print(d.get('prompt',''))" 2>/dev/null)

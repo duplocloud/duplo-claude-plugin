@@ -28,7 +28,7 @@ All planning for a project happens in a single **AI Planner ticket**. The plugin
 
 ## Step 0 — Verify project is active
 
-Read `.duplocloud/state.json`.
+Read `.duplocloud/state.toon`.
 
 - If `project_id` or `workspace_id` is absent: stop and tell the user:
   > "No active project. Please run `/duplo:activate_project` first."

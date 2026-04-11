@@ -2,9 +2,9 @@
   "permissions": {
     "allow": [
       "Bash(*)",
-      "Read(.duplocloud/state.json)",
-      "Write(.duplocloud/state.json)",
-      "Edit(.duplocloud/state.json)",
+      "Read(.duplocloud/state.toon)",
+      "Write(.duplocloud/state.toon)",
+      "Edit(.duplocloud/state.toon)",
       "Write(.duplocloud/duplo-plugin.log.json)",
       "Read(.duplocloud/duplo-plugin.log.json)",
       "mcp__duplo-helpdesk__Workspaces_get_available",

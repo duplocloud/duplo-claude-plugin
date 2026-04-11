@@ -10,7 +10,7 @@ Follow these steps in order:
 
 **Step 0 — Verify project is active:**
 
-Read `.duplocloud/state.json`.
+Read `.duplocloud/state.toon`.
 
 - If `project_id` is absent or file missing: stop and tell the user:
   > "No active project found. Please run `/duplo:activate_project` first."

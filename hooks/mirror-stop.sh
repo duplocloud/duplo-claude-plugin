@@ -3,11 +3,11 @@
 # Skips mirroring when the last action was a Ticket_send_message_streaming or
 # Ticket_send_message call — those conversations are already in the ticket via mode=0.
 
-STATE_FILE=".duplocloud/state.json"
+STATE_FILE=".duplocloud/state.toon"
 [ -f "$STATE_FILE" ] || exit 0
 
-WORKSPACE_ID=$(python3 -c "import json; d=json.load(open('$STATE_FILE')); print(d.get('workspace_id',''))" 2>/dev/null)
-TICKET_NAME=$(python3 -c "import json; d=json.load(open('$STATE_FILE')); print(d.get('active_ticket_name',''))" 2>/dev/null)
+WORKSPACE_ID=$(grep '^workspace_id:' "$STATE_FILE" 2>/dev/null | sed 's/^workspace_id: *//')
+TICKET_NAME=$(grep '^active_ticket_name:' "$STATE_FILE" 2>/dev/null | sed 's/^active_ticket_name: *//')
 [ -n "$WORKSPACE_ID" ] && [ -n "$TICKET_NAME" ] || exit 0
 
 # Transcript is at a file path, not inline

@@ -8,7 +8,7 @@ Follow these steps in order:
 
 **Step 1 — Check active ticket:**
 
-Read `.duplocloud/state.json`.
+Read `.duplocloud/state.toon`.
 
 - If `workspace_id` or `active_ticket_name` is missing: tell the user:
   > "No active ticket found. Please run `/duplo:activate_ticket` first."
