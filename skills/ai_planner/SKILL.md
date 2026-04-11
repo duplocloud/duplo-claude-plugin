@@ -44,12 +44,12 @@ bash -c 'source .env 2>/dev/null; printf "TOKEN=%s\nURL=%s" "$DUPLO_TOKEN" "$DUP
 
 ## Step 1 — Find or create the AI Planner ticket
 
-Call `mcp__duplo-helpdesk__Ticket_list` with `workspaceId = workspace_id`.
+Call `duplo-helpdesk::Ticket_list` with `workspaceId = workspace_id`.
 
 Look for an existing `open` or `inProgress` ticket whose `project.id == project_id`.
 
-- **Found** → set `active_ticket_name`, call `mcp__duplo-helpdesk__Ticket_put_status` to mark `inProgress`, save state.
-- **Not found** → ask the user for an agent, then call `mcp__duplo-helpdesk__Ticket_create`:
+- **Found** → set `active_ticket_name`, call `duplo-helpdesk::Ticket_put_status` to mark `inProgress`, save state.
+- **Not found** → ask the user for an agent, then call `duplo-helpdesk::Ticket_create`:
   ```json
   {
     "title": "<project_name> AI Planner",
@@ -65,7 +65,7 @@ Look for an existing `open` or `inProgress` ticket whose `project.id == project_
 
 ## Step 2 — Detect current phase and artifact state
 
-Call `mcp__duplo-helpdesk__Projects_get` with `id = project_id`.
+Call `duplo-helpdesk::Projects_get` with `id = project_id`.
 
 Extract:
 - `spec.content` → `spec_content`
@@ -101,7 +101,7 @@ Determine current phase:
 If not already shown: tell the user:
 > "Let's define the spec. Describe what you'd like to achieve:"
 
-Send the user's input via `mcp__duplo-helpdesk__Ticket_send_message_streaming`:
+Send the user's input via `duplo-helpdesk::Ticket_send_message_streaming`:
 ```json
 {
   "workspaceId": "<workspace_id>",
@@ -130,7 +130,7 @@ Ask:
 - **refine** → send follow-up with same `project_context`, display response, re-capture `spec_draft`. Repeat.
 - **confirm** → save:
   1. Use `spec_draft` (from `present_file`) if captured; otherwise use the assembled `text_delta` text.
-  2. Call `mcp__duplo-helpdesk__Projects_patch` with body `{ "spec": { "content": "<spec_draft>" } }`
+  2. Call `duplo-helpdesk::Projects_patch` with body `{ "spec": { "content": "<spec_draft>" } }`
   3. Tell the user: "Spec saved."
   4. Proceed to Step 4.
 
@@ -138,12 +138,12 @@ Ask:
 
 ## Step 4 — Plan phase
 
-Fetch updated project: call `mcp__duplo-helpdesk__Projects_get` with `id = project_id`. Capture `spec_content`, `plan_content`, `plan_state`.
+Fetch updated project: call `duplo-helpdesk::Projects_get` with `id = project_id`. Capture `spec_content`, `plan_content`, `plan_state`.
 
 Tell the user:
 > "Now let's build the plan. Describe your approach or say 'generate from spec':"
 
-Send the user's input via `mcp__duplo-helpdesk__Ticket_send_message_streaming`:
+Send the user's input via `duplo-helpdesk::Ticket_send_message_streaming`:
 ```json
 {
   "workspaceId": "<workspace_id>",
@@ -173,7 +173,7 @@ Ask:
 - **refine** → send follow-up with same `project_context`, display response, re-capture `plan_draft`. Repeat.
 - **confirm** → save:
   1. Use `plan_draft` (from `present_file`) if captured; otherwise use the assembled `text_delta` text.
-  2. Call `mcp__duplo-helpdesk__Projects_patch` with body `{ "plan": { "content": "<plan_draft>" } }`
+  2. Call `duplo-helpdesk::Projects_patch` with body `{ "plan": { "content": "<plan_draft>" } }`
   3. Tell the user: "Plan saved."
   4. Proceed to Step 5.
 
@@ -181,12 +181,12 @@ Ask:
 
 ## Step 5 — Execution phase
 
-Fetch updated project: call `mcp__duplo-helpdesk__Projects_get` with `id = project_id`. Capture `spec_content` and `plan_content`.
+Fetch updated project: call `duplo-helpdesk::Projects_get` with `id = project_id`. Capture `spec_content` and `plan_content`.
 
 Tell the user:
 > "Generating execution stages from the plan..."
 
-Send via `mcp__duplo-helpdesk__Ticket_send_message_streaming`:
+Send via `duplo-helpdesk::Ticket_send_message_streaming`:
 ```json
 {
   "workspaceId": "<workspace_id>",
@@ -221,9 +221,9 @@ Ask the user:
 
 - **refine** → send follow-up with same `project_context`, display response, re-capture `execution_draft`. Repeat.
 - **confirm** → save the execution stages:
-  1. Re-fetch project: call `mcp__duplo-helpdesk__Projects_get` to get `execution.version`.
+  1. Re-fetch project: call `duplo-helpdesk::Projects_get` to get `execution.version`.
   2. Parse `execution_draft` JSON — it has a `stages` array. Each stage has `id`, `name`, `description`, `tasks[]` where each task has `id`, `title`, `description`.
-  3. Call `mcp__duplo-helpdesk__Projects_update_plan_execution` with `id = project_id`:
+  3. Call `duplo-helpdesk::Projects_update_plan_execution` with `id = project_id`:
      ```json
      {
        "version": "<execution.version>",
@@ -246,7 +246,7 @@ Ask the user:
 
 ## Step 6 — List stages
 
-Re-fetch if needed: call `mcp__duplo-helpdesk__Projects_get` with `id = project_id`.
+Re-fetch if needed: call `duplo-helpdesk::Projects_get` with `id = project_id`.
 
 Display:
 ```
@@ -269,7 +269,7 @@ Ask:
 ## Step 7 — List tasks in stage
 
 For each task in `active_stage.tasks`, check for an existing ticket:
-Call `mcp__duplo-helpdesk__Ticket_get_project_task` with `workspaceId`, `projectId = project_id`, `projectType = "plan_execution"`, `taskId = <task.name>`.
+Call `duplo-helpdesk::Ticket_get_project_task` with `workspaceId`, `projectId = project_id`, `projectType = "plan_execution"`, `taskId = <task.name>`.
 
 Display:
 ```
@@ -307,7 +307,7 @@ python3 -c "import uuid; print(uuid.uuid4())"
 
 Re-fetch project to get `execution.version` and all existing tasks in `active_stage` with their `name`, `title`, `description`, `version`.
 
-Call `mcp__duplo-helpdesk__Projects_update_plan_execution` with `id = project_id`:
+Call `duplo-helpdesk::Projects_update_plan_execution` with `id = project_id`:
 ```json
 {
   "version": "<execution.version>",

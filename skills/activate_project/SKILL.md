@@ -23,7 +23,7 @@ Follow these steps in order:
 
 Read `.duplocloud/state.json` (file may not exist). Note `workspace_id`, `project_id`, `project_name` if present.
 
-Call `mcp__duplo-helpdesk__Workspaces_get_available` to get the list of available workspaces.
+Call `duplo-helpdesk::Workspaces_get_available` to get the list of available workspaces.
 
 If the call fails with an auth or connection error, stop and tell the user:
 > "Cannot reach the duplo-helpdesk MCP server. Ensure `DUPLO_TOKEN` is exported and the server is running."
@@ -65,7 +65,7 @@ If the newly selected workspace **differs** from what was in state: **clear `pro
 
 ## Step 2 — Resolve project
 
-Call `mcp__duplo-helpdesk__Projects_list` with `workspaceId = workspace_id`.
+Call `duplo-helpdesk::Projects_list` with `workspaceId = workspace_id`.
 
 If the list is empty: tell the user "No projects found in this workspace. Please create a project in the DuploCloud portal first." and stop.
 
@@ -121,7 +121,7 @@ Create the `.duplocloud/` directory first if it does not exist.
 
 ## Step 5 — Fetch project data
 
-Call `mcp__duplo-helpdesk__Projects_get` with `id = project_id`.
+Call `duplo-helpdesk::Projects_get` with `id = project_id`.
 
 From the response extract:
 - `spec.content` → `spec_content` (string, may be blank or absent)

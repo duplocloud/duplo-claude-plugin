@@ -19,7 +19,7 @@ Capture `project_id`.
 
 **Step 1 — Fetch current spec content:**
 
-Call `mcp__duplo-helpdesk__Projects_get` with `id = project_id`.
+Call `duplo-helpdesk::Projects_get` with `id = project_id`.
 
 Extract the `spec.content` field from the response.
 
@@ -61,7 +61,7 @@ Ask the user:
 
 - If **Save**:
 
-  Call `mcp__duplo-helpdesk__Projects_patch` with `id = project_id` and body:
+  Call `duplo-helpdesk::Projects_patch` with `id = project_id` and body:
   ```json
   {
     "spec": {

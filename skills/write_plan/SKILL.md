@@ -19,7 +19,7 @@ Capture `project_id`.
 
 **Step 1 — Fetch the spec for context:**
 
-Call `mcp__duplo-helpdesk__Projects_get` with `id = project_id`.
+Call `duplo-helpdesk::Projects_get` with `id = project_id`.
 
 Extract `spec.content` and `plan` from the response. The spec provides requirements and scope that the plan must implement.
 
@@ -65,7 +65,7 @@ Ask the user:
 
 - If **Save**:
 
-  Call `mcp__duplo-helpdesk__Projects_patch` with `id = project_id` and body:
+  Call `duplo-helpdesk::Projects_patch` with `id = project_id` and body:
   ```json
   {
     "plan": "<plan content as markdown string>"

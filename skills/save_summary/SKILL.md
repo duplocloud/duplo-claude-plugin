@@ -53,7 +53,7 @@ Unresolved issues, pending questions, or follow-up actions still needed.
 
 **Step 3 — Save to platform:**
 
-Call `mcp__duplo-helpdesk__Ticket_save_summary` with:
+Call `duplo-helpdesk::Ticket_save_summary` with:
 - `workspaceId = workspace_id`
 - `ticketName = active_ticket_name`
 - Body: `{ "summary": "<summary content from Step 2>" }`

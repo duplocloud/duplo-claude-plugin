@@ -23,7 +23,7 @@ Follow these steps in order:
 
 Read `.duplocloud/state.json` (file may not exist). Note `workspace_id`, `active_ticket_name`, `project_id`, `project_name` if present.
 
-Call `mcp__duplo-helpdesk__Workspaces_get_available` to get the list of available workspaces.
+Call `duplo-helpdesk::Workspaces_get_available` to get the list of available workspaces.
 
 - If the call returns an empty list, tell the user:
   > "It looks like you don't have any workspaces set up yet. Please create one in the DuploCloud portal first."
@@ -62,7 +62,7 @@ If the newly selected workspace **differs** from what was in state: **clear `act
 
 After workspace is resolved (whether auto-selected or chosen via Step 1a):
 
-Call `mcp__duplo-helpdesk__Ticket_list` with `workspaceId = workspace_id`.
+Call `duplo-helpdesk::Ticket_list` with `workspaceId = workspace_id`.
 
 Store the results in `.duplocloud/state.json` under a `tickets` field:
 ```json
@@ -116,7 +116,7 @@ Ask: "Which would you like to work on?"
 
 If `project_id` is present in state:
 
-Call `mcp__duplo-helpdesk__Projects_get` with `id = project_id`.
+Call `duplo-helpdesk::Projects_get` with `id = project_id`.
 
 From the response extract:
 - `has_execution_tasks` = true if any stage in `execution.stages` has tasks
@@ -175,7 +175,7 @@ Ask the user: "What should we call this ticket?"
 
 ### Step 4d — Pick an agent
 
-Call `mcp__duplo-helpdesk__Workspaces_get_agents` with `id = workspace_id`.
+Call `duplo-helpdesk::Workspaces_get_agents` with `id = workspace_id`.
 
 Show a numbered list using agent **name** only (no IDs or endpoints):
 ```
@@ -188,7 +188,7 @@ Which agent should handle this ticket?
 
 ### Step 4e — Create the ticket
 
-**Standalone ticket** — call `mcp__duplo-helpdesk__Ticket_create` with `workspaceId = workspace_id` and body:
+**Standalone ticket** — call `duplo-helpdesk::Ticket_create` with `workspaceId = workspace_id` and body:
 ```json
 {
   "title": "<user-provided title>",
@@ -198,7 +198,7 @@ Which agent should handle this ticket?
 }
 ```
 
-**Spec or plan creation ticket** (when `project_ticket_type` is set) — call `mcp__duplo-helpdesk__Ticket_create` with `workspaceId = workspace_id` and body:
+**Spec or plan creation ticket** (when `project_ticket_type` is set) — call `duplo-helpdesk::Ticket_create` with `workspaceId = workspace_id` and body:
 ```json
 {
   "title": "<project_name> — <spec_creation or plan_creation>",
@@ -212,7 +212,7 @@ Which agent should handle this ticket?
 }
 ```
 
-**Execution task ticket** — call `mcp__duplo-helpdesk__Ticket_create` with `workspaceId = workspace_id` and body:
+**Execution task ticket** — call `duplo-helpdesk::Ticket_create` with `workspaceId = workspace_id` and body:
 ```json
 {
   "title": "<task_title>",
@@ -233,7 +233,7 @@ Capture the returned ticket's `name` as `active_ticket_name` (stored internally)
 
 ## Step 5 — Mark ticket as in progress
 
-Call `mcp__duplo-helpdesk__Ticket_put_status` with `workspaceId = workspace_id`, `ticketName = active_ticket_name`, and body:
+Call `duplo-helpdesk::Ticket_put_status` with `workspaceId = workspace_id`, `ticketName = active_ticket_name`, and body:
 ```json
 { "status": "inProgress" }
 ```
@@ -244,7 +244,7 @@ This is safe to call unconditionally — the backend accepts it even if the tick
 
 ## Step 6 — Load past context
 
-Call `mcp__duplo-helpdesk__Ticket_get_messages` with `workspaceId = workspace_id`, `ticketName = active_ticket_name`.
+Call `duplo-helpdesk::Ticket_get_messages` with `workspaceId = workspace_id`, `ticketName = active_ticket_name`.
 
 - If messages are returned: read them carefully. They contain the full conversation history — prior user messages, assistant responses, decisions made, and work done. Use this to restore your understanding of where work left off before responding to the user.
 - If no messages or empty: proceed without prior context.
@@ -268,7 +268,7 @@ Write `.duplocloud/state.json` silently, preserving any existing `project_id` an
 
 ## Step 7b — Confirm or change the agent
 
-Call `mcp__duplo-helpdesk__Workspaces_get_agents` with `id = workspace_id`.
+Call `duplo-helpdesk::Workspaces_get_agents` with `id = workspace_id`.
 
 From the ticket data (captured in Step 3 or Step 4e), note the `aiAgentId`.
 
@@ -298,7 +298,7 @@ Show agent names only (no IDs or endpoints):
 ```
 Ask: "Which agent should handle your messages?"
 
-Call `mcp__duplo-helpdesk__Ticket_put_assignee` with `workspaceId = workspace_id`, `ticketName = active_ticket_name`, `agentId = <selected agent id>`.
+Call `duplo-helpdesk::Ticket_put_assignee` with `workspaceId = workspace_id`, `ticketName = active_ticket_name`, `agentId = <selected agent id>`.
 
 Tell the user: "**\<agent name\>** is now assigned."
 

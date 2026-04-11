@@ -82,7 +82,7 @@ Never silently select without telling the user.
 ## MCP Server
 
 All DuploCloud backend calls go through the **`duplo-helpdesk` MCP server** configured in `.mcp.json`.
-The server auto-generates tools from the helpdesk Swagger spec — tools are named `mcp__duplo-helpdesk__<OperationId>`.
+The server auto-generates tools from the helpdesk Swagger spec. Skills and docs use the generic name `duplo-helpdesk::<OperationId>`. In Claude Code the actual tool name is `mcp__duplo-helpdesk__<OperationId>` — map accordingly.
 
 Environment variables required before launching Claude:
 ```bash
@@ -103,7 +103,7 @@ When a ticket is active, **the assigned agent is the sole responder to the user'
 When the user sends a message with an active ticket:
 
 1. Read state + env in a single Bash call (see "State + env reads" above). Extract `workspace_id`, `active_ticket_name`, `DUPLO_TOKEN`, and `DUPLO_HELPDESK_URL`.
-2. Call `mcp__duplo-helpdesk__Ticket_send_message_streaming` with:
+2. Call `duplo-helpdesk::Ticket_send_message_streaming` with:
    ```json
    {
      "workspaceId": "<workspace_id>",
@@ -137,11 +137,11 @@ When the user sends a message with an active ticket:
 
 4. If the assembled text is empty, or the tool call failed entirely, display:
    > "Agent not available."
-   Then fetch the agent list: call `mcp__duplo-helpdesk__Workspaces_get_agents` with `id = workspace_id` and show:
+   Then fetch the agent list: call `duplo-helpdesk::Workspaces_get_agents` with `id = workspace_id` and show:
    > "Would you like to switch to a different agent?
    > 1. <agent name>
    > 2. ..."
-   On selection, call `mcp__duplo-helpdesk__Ticket_put_assignee` with `workspaceId`, `ticketName`, and `agentId` of the selected agent. Tell the user the new agent is assigned, then stop and wait for their next message.
+   On selection, call `duplo-helpdesk::Ticket_put_assignee` with `workspaceId`, `ticketName`, and `agentId` of the selected agent. Tell the user the new agent is assigned, then stop and wait for their next message.
    Do not answer the user's original message yourself under any circumstances.
 5. Output the assembled agent text as your reply text verbatim. Do not add commentary or wrap it.
 
@@ -191,7 +191,7 @@ When the user explicitly asks to close the ticket (e.g. "close the ticket", "mar
 
 1. Ask the user for confirmation:
    > "Shall I mark this ticket as resolved and close it? (y/n)"
-2. If confirmed — call `mcp__duplo-helpdesk__Ticket_put_status` with `workspaceId`, `ticketName`, and body:
+2. If confirmed — call `duplo-helpdesk::Ticket_put_status` with `workspaceId`, `ticketName`, and body:
    ```json
    { "status": "closed", "disposition": "resolved" }
    ```
@@ -212,7 +212,7 @@ When saving is explicitly requested:
 
 All MCP tool calls and their responses must be logged to `.duplocloud/duplo-plugin.log.json`. This file is gitignored.
 
-**Log every `mcp__duplo-helpdesk__*` tool call** — both the request and the response. Accumulate entries in memory during the flow. Flush them in the single end-of-flow Bash call (combined with state write — see "State write + log flush" above).
+**Log every `duplo-helpdesk::*` tool call** — both the request and the response. Accumulate entries in memory during the flow. Flush them in the single end-of-flow Bash call (combined with state write — see "State write + log flush" above).
 
 **Log entry schema:**
 ```json
@@ -220,7 +220,7 @@ All MCP tool calls and their responses must be logged to `.duplocloud/duplo-plug
   "timestamp": "<ISO 8601 UTC>",
   "project_name": "<project_name from state, or null>",
   "ticket_name": "<active_ticket_name from state, or null>",
-  "tool": "<mcp__duplo-helpdesk__OperationId>",
+  "tool": "<duplo-helpdesk::OperationId>",
   "request": { },
   "response": { }
 }

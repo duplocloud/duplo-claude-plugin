@@ -24,7 +24,7 @@ curl -sf "${DUPLO_HELPDESK_URL}/health"
 
 ## Step 2 — MCP tool call (auth check)
 
-Call the `mcp__duplo-helpdesk__Engineers_list` tool with no arguments.
+Call the `duplo-helpdesk::Engineers_list` tool with no arguments.
 
 - If it succeeds → tell the user:
   > "MCP server is connected and responding. Auth is valid."

@@ -6,8 +6,8 @@
 
 ## MCP Server
 
-All DuploCloud backend calls go through the **`duplo-helpdesk` MCP server** configured in `.cursor/mcp.json`.
-Tools are named `duplo-helpdesk_<OperationId>` (e.g. `duplo-helpdesk_Workspaces_get_available`).
+All DuploCloud backend calls go through the **`duplo-helpdesk` MCP server** configured in `.mcp.json`.
+Skills and docs use the generic name `duplo-helpdesk::<OperationId>`. In Cursor the actual tool name is `duplo-helpdesk_<OperationId>` — map accordingly.
 
 Environment variables are interpolated from `.env` via the MCP config:
 - `DUPLO_TOKEN` — Bearer token for API auth
@@ -79,7 +79,7 @@ When a ticket is active, **the assigned agent is the sole responder to the user'
 When the user sends a message with an active ticket:
 
 1. Read `.duplocloud/state.json` and `.env` to get `workspace_id`, `active_ticket_name`, `DUPLO_TOKEN`, `DUPLO_HELPDESK_URL`.
-2. Call `duplo-helpdesk_Ticket_send_message_streaming` with:
+2. Call `duplo-helpdesk::Ticket_send_message_streaming` with:
    ```json
    {
      "workspaceId": "<workspace_id>",
@@ -99,7 +99,7 @@ When the user sends a message with an active ticket:
    - Ignore all other event types.
 4. If the assembled text is empty or the call failed:
    > "Agent not available."
-   Fetch the agent list with `duplo-helpdesk_Workspaces_get_agents` and offer to switch agents.
+   Fetch the agent list with `duplo-helpdesk::Workspaces_get_agents` and offer to switch agents.
    Do not answer the user's original message yourself.
 5. Output the assembled agent text verbatim. Do not add commentary.
 
@@ -113,7 +113,7 @@ Error: <error message>
 When the user explicitly asks to close a ticket:
 
 1. Ask for confirmation: "Shall I mark this ticket as resolved and close it? (y/n)"
-2. If confirmed — call `duplo-helpdesk_Ticket_put_status` with `{ "status": "closed", "disposition": "resolved" }`.
+2. If confirmed — call `duplo-helpdesk::Ticket_put_status` with `{ "status": "closed", "disposition": "resolved" }`.
 3. Remove `active_ticket_name` from state.
 
 **Never close a ticket automatically.** Only close when the user explicitly requests it.
@@ -128,7 +128,7 @@ When requested:
 
 ## MCP Tool Logging
 
-Log every `duplo-helpdesk_*` tool call to `.duplocloud/duplo-plugin.log.json` (gitignored).
+Log every `duplo-helpdesk::*` tool call to `.duplocloud/duplo-plugin.log.json` (gitignored).
 
 **Log entry schema:**
 ```json
@@ -136,7 +136,7 @@ Log every `duplo-helpdesk_*` tool call to `.duplocloud/duplo-plugin.log.json` (g
   "timestamp": "<ISO 8601 UTC>",
   "project_name": "<from state or null>",
   "ticket_name": "<from state or null>",
-  "tool": "<duplo-helpdesk_OperationId>",
+  "tool": "<duplo-helpdesk::OperationId>",
   "request": {},
   "response": {}
 }
