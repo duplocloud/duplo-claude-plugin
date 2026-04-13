@@ -44,10 +44,8 @@ TICKET_TITLES = {
     "plan_execution": "{project_name}-Plan-Execution-Ticket",
 }
 
-PROJECT_TYPE_INT = {
-    "spec_creation":  0,
-    "plan_execution": 2,
-}
+TICKET_SUB_TYPE_PLANNER   = "project-planner"
+TICKET_SUB_TYPE_EXECUTION = "execution"
 
 TICKET_DESCRIPTIONS = {
     "spec_creation": (
@@ -221,12 +219,10 @@ def cmd_list_execution_tickets():
 
     base_url = auth["base_url"]
     token = auth["token"]
-    project_type = PROJECT_TYPE_INT["plan_execution"]
-
     status, body = _get(
         base_url, token,
-        f"/v1/aiservicedesk/tickets/{workspace_id}"
-        f"?projectId={project_id}&projectType={project_type}",
+        f"/v1/aiservicedesk/tickets/{workspace_id}/origin-context/list"
+        f"?type=Project&id={project_id}&subType={TICKET_SUB_TYPE_EXECUTION}",
     )
     if status != 200 or not body:
         print(f"Failed to list execution tickets (HTTP {status}).", file=sys.stderr)
@@ -255,8 +251,8 @@ def _fetch_execution_tickets_map(auth: dict, project_id: str, workspace_id: str)
     token = auth["token"]
     status, body = _get(
         base_url, token,
-        f"/v1/aiservicedesk/tickets/{workspace_id}"
-        f"?projectId={project_id}&projectType={PROJECT_TYPE_INT['plan_execution']}",
+        f"/v1/aiservicedesk/tickets/{workspace_id}/origin-context/list"
+        f"?type=Project&id={project_id}&subType={TICKET_SUB_TYPE_EXECUTION}",
     )
     if status != 200 or not body:
         return {}
@@ -269,8 +265,9 @@ def _fetch_execution_tickets_map(auth: dict, project_id: str, workspace_id: str)
                 tickets = d
         result = {}
         for t in tickets:
-            proj = t.get("project") or {}
-            tid = proj.get("taskId") or proj.get("TaskId") or ""
+            origin = t.get("originContext") or {}
+            meta = origin.get("metadata") or origin.get("Metadata") or {}
+            tid = meta.get("taskId") or meta.get("TaskId") or ""
             if tid:
                 result[tid] = t
         return result
@@ -391,7 +388,7 @@ def cmd_check_task_ticket(task_id: str):
     state = load_state()
     project_id, workspace_id = _require_project(state)
 
-    # Fetch all execution tickets and match strictly by project.taskId
+    # Fetch all execution tickets and match strictly by originContext.metadata.taskId
     tickets_map = _fetch_execution_tickets_map(auth, project_id, workspace_id)
     ticket = tickets_map.get(task_id)
 
@@ -444,10 +441,14 @@ def cmd_create_execution_task_ticket(task_id: str, agent_id: str):
         "aiAgentId": agent_id,
         "workspaceId": workspace_id,
         "ticketContextForAgent": {"scopeIds": scope_ids},
-        "project": {
+        "originContext": {
+            "type": "Project",
             "id": project_id,
-            "type": "plan_execution",
-            "taskId": task_id,
+            "subType": TICKET_SUB_TYPE_EXECUTION,
+            "metadata": {
+                "taskId": task_id,
+                "projectType": "plan_execution",
+            },
         },
         "description": task_description,
     }
@@ -527,9 +528,13 @@ def cmd_create_ticket(ticket_type: str, agent_id: str, workspace_id: str | None 
     payload = {
         "title": title,
         "aiAgentId": agent_id,
-        "project": {
+        "originContext": {
+            "type": "Project",
             "id": project_id,
-            "type": PROJECT_TYPE_INT[ticket_type],
+            "subType": TICKET_SUB_TYPE_PLANNER,
+            "metadata": {
+                "projectType": ticket_type,
+            },
         },
         "ticketContextForAgent": {
             "scopeIds": scope_ids,
@@ -538,10 +543,6 @@ def cmd_create_ticket(ticket_type: str, agent_id: str, workspace_id: str | None 
         "platform_context": {
             "duplo_base_url": base_url,
             "duplo_token": token,
-            "project": {
-                "id": project_id,
-                "type": PROJECT_TYPE_INT[ticket_type],
-            },
         },
     }
 
@@ -614,24 +615,25 @@ def cmd_activate_ticket(ticket_type: str):
 
     base_url = auth["base_url"]
     token    = auth["token"]
-    project_type = PROJECT_TYPE_INT[ticket_type]
 
+    # Use the origin-context single-ticket endpoint with subType=project-planner
+    # and metadata[projectType] to distinguish spec_creation vs plan_execution tickets.
     status, body = _get(
         base_url, token,
-        f"/v1/aiservicedesk/tickets/{workspace_id}"
-        f"?projectId={project_id}&projectType={project_type}",
+        f"/v1/aiservicedesk/tickets/{workspace_id}/origin-context"
+        f"?type=Project&id={project_id}&subType={TICKET_SUB_TYPE_PLANNER}"
+        f"&metadata[projectType]={ticket_type}",
     )
 
     if status == 200 and body:
-        parsed  = json.loads(body)
-        tickets = _parse_list(parsed)
-        if tickets:
-            ticket       = tickets[0]
+        parsed = json.loads(body)
+        ticket = _unwrap_data(parsed) if isinstance(parsed, dict) else None
+        if isinstance(ticket, dict) and ticket:
             ticket_id    = _item_id(ticket)
             ticket_title = str(ticket.get("title") or ticket_id)
             ticket_name  = str(ticket.get("name") or "")
 
-            # List endpoint may omit 'name'; fetch full ticket to get it
+            # Endpoint may omit 'name'; fetch full ticket to get it
             if not ticket_name and ticket_id:
                 details = _fetch_ticket(base_url, token, workspace_id, ticket_id)
                 if details:
