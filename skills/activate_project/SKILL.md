@@ -165,4 +165,7 @@ Then ask the user whether to proceed:
 - `"plan"` → ask: "Spec is approved. Would you like to activate the plan ticket now? (y/n)"
   - **y** → run the `activate_ticket` skill inline (follow its steps from the beginning).
   - **n** → stop.
-- `"none"` → tell the user "Both spec and plan are approved — the project is complete." and stop.
+- `"none"` + `has_execution_tasks` = `true` → tell the user "Both spec and plan are approved. Execution tasks are ready." then ask: "Would you like to pick up an execution task now? (y/n)"
+  - **y** → run the `activate_ticket` skill inline (follow its steps from the beginning, starting at Step 2b since `has_execution_tasks` is already known to be `true`).
+  - **n** → stop.
+- `"none"` + `has_execution_tasks` = `false` → tell the user "Both spec and plan are approved — waiting for the platform to generate execution tasks." and stop.

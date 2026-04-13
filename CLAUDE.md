@@ -39,6 +39,19 @@ After every response where meaningful work was done (code written, tests run, fi
 
 Keep it factual and concise — one line per meaningful action. Omit this section for pure question/answer exchanges where no work was performed.
 
+## Execution Enforcement
+
+**Never write, edit, or run code for a project task without an active execution ticket.**
+
+Before starting any implementation work (writing files, running commands, executing tasks):
+
+1. Run `python3 ~/.duplocloud/bin/duplo_ticket.py --check-project` and verify `active_ticket_name` is set in state.
+2. If `active_ticket_name` is missing: do NOT start coding. Tell the user:
+   > "No active execution ticket found. Please run `/duplo:activate_ticket` to pick a task before I begin."
+   Then stop and wait.
+
+This applies even if the user says "start the execution", "just do it", or similar. An active ticket must exist first.
+
 ## State Errors
 
 If `--check-project` or any duplo command returns exit code 3 (no active project/ticket):
