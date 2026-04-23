@@ -205,9 +205,10 @@ Which agent should handle this ticket?
   "aiAgentId": "<selected agent id>",
   "workspaceId": "<workspace_id>",
   "origin": "api",
-  "project": {
+  "originContext": {
+    "type": "Project",
     "id": "<project_id>",
-    "type": "<project_ticket_type>"
+    "subType": "<project_ticket_type>"
   }
 }
 ```
@@ -219,10 +220,11 @@ Which agent should handle this ticket?
   "aiAgentId": "<selected agent id>",
   "workspaceId": "<workspace_id>",
   "origin": "api",
-  "project": {
+  "originContext": {
+    "type": "Project",
     "id": "<project_id>",
-    "type": "plan_execution",
-    "taskId": "<task_id>"
+    "subType": "plan_execution",
+    "metadata": { "taskId": "<task_id>" }
   }
 }
 ```

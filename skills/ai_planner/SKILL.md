@@ -44,21 +44,51 @@ bash -c 'source .env 2>/dev/null; printf "TOKEN=%s\nURL=%s" "$DUPLO_TOKEN" "$DUP
 
 ## Step 1 — Find or create the AI Planner ticket
 
-Call `duplo-helpdesk::Ticket_list` with `workspaceId = workspace_id`.
+Call `duplo-helpdesk::Ticket_get_origin_context_list` with:
+- `workspaceId = workspace_id`
+- `type = "Project"`
+- `id = project_id`
+- `subType = "project-planner"`
 
-Look for an existing `open` or `inProgress` ticket whose `project.id == project_id`.
+This returns all AI Planner tickets linked to this project. Filter for tickets where `isActive == true`. If multiple active tickets exist, take the one with the most recent `updatedAt`.
 
-- **Found** → set `active_ticket_name`, call `duplo-helpdesk::Ticket_put_status` to mark `inProgress`, save state.
-- **Not found** → ask the user for an agent, then call `duplo-helpdesk::Ticket_create`:
+- **Found** → tell the user:
+  > "Resuming AI Planner ticket **\<ticket_name\>** for project **\<project_name\>**."
+
+  Set `active_ticket_name`. Save state. Proceed to Step 2.
+
+- **Not found** → ask the user for an agent, then fetch workspace context and create the ticket:
+
+  Call `duplo-helpdesk::Workspaces_get_scopes` with `id = workspace_id` and `duplo-helpdesk::Workspaces_get_personas` with `id = workspace_id` in parallel.
+  - Collect all scope IDs as `scope_ids` (array of `id` from each scope in the response).
+  - Collect all persona IDs as `persona_ids` (array of `id` from each persona in the response).
+  - If either call fails or returns empty, use `[]` for that field — do not block ticket creation.
+
+  Call `duplo-helpdesk::Ticket_create`:
   ```json
   {
     "title": "<project_name> AI Planner",
     "aiAgentId": "<selected agent id>",
     "workspaceId": "<workspace_id>",
-    "origin": "api",
-    "project": { "id": "<project_id>" }
+    "source": "helpdesk",
+    "ticketContextForAgent": {
+      "scopeIds": ["<scope_ids>"],
+      "personaIds": ["<persona_ids>"]
+    },
+    "originContext": {
+      "type": "Project",
+      "id": "<project_id>",
+      "subType": "project-planner",
+      "metadata": { "projectType": "spec_creation" }
+    },
+    "requestApproval": {
+      "approvedCmdRegEx": ["^\s*cat\b\s+.*", "^\s*mkdir\b\s+.*", "^\s*find\b\s+.*", "^\s*ls\b\s+.*"]
+    }
   }
   ```
+  
+  Call the MCP tool and set `active_ticket_name` and save state.
+  
   Set `active_ticket_name` and save state.
 
 ---
@@ -120,16 +150,16 @@ Send the user's input via `duplo-helpdesk::Ticket_send_message_streaming`:
 }
 ```
 
-Apply agent availability hard rule. From the SSE response:
-- Concatenate all `text_delta` values → assemble and display the agent's full text verbatim.
-- Look for a `present_file` event where `path` ends with `spec.md` → capture its `content` as `spec_draft`.
+Apply agent availability hard rule. From the plain JSON response:
+- Read `text` → display the agent's full text verbatim.
+- Check `present_files` for an entry where `path` ends with `spec.md` → capture its `content` as `spec_draft`.
 
 Ask:
 > "Would you like to refine the spec or confirm it? (refine / confirm)"
 
 - **refine** → send follow-up with same `project_context`, display response, re-capture `spec_draft`. Repeat.
 - **confirm** → save:
-  1. Use `spec_draft` (from `present_file`) if captured; otherwise use the assembled `text_delta` text.
+  1. Use `spec_draft` (from `present_files`) if captured; otherwise use the `text` value.
   2. Call `duplo-helpdesk::Projects_patch` with body `{ "spec": { "content": "<spec_draft>" } }`
   3. Tell the user: "Spec saved."
   4. Proceed to Step 4.
@@ -163,16 +193,16 @@ Send the user's input via `duplo-helpdesk::Ticket_send_message_streaming`:
 }
 ```
 
-Apply agent availability hard rule. From the SSE response:
-- Concatenate all `text_delta` values → assemble and display the agent's full text verbatim.
-- Look for a `present_file` event where `path` ends with `plan.md` → capture its `content` as `plan_draft`.
+Apply agent availability hard rule. From the plain JSON response:
+- Read `text` → display the agent's full text verbatim.
+- Check `present_files` for an entry where `path` ends with `plan.md` → capture its `content` as `plan_draft`.
 
 Ask:
 > "Would you like to refine the plan or confirm it? (refine / confirm)"
 
 - **refine** → send follow-up with same `project_context`, display response, re-capture `plan_draft`. Repeat.
 - **confirm** → save:
-  1. Use `plan_draft` (from `present_file`) if captured; otherwise use the assembled `text_delta` text.
+  1. Use `plan_draft` (from `present_files`) if captured; otherwise use the `text` value.
   2. Call `duplo-helpdesk::Projects_patch` with body `{ "plan": { "content": "<plan_draft>" } }`
   3. Tell the user: "Plan saved."
   4. Proceed to Step 5.
@@ -207,11 +237,11 @@ Send via `duplo-helpdesk::Ticket_send_message_streaming`:
 }
 ```
 
-Apply agent availability hard rule. From the SSE response:
-- Concatenate all `text_delta` values → assemble and display the agent's full text verbatim.
-- Look for a `present_file` event where `path` ends with `execution_tasks.json` → capture its `content` as `execution_draft`.
+Apply agent availability hard rule. From the plain JSON response:
+- Read `text` → display the agent's full text verbatim.
+- Check `present_files` for an entry where `path` ends with `execution_tasks.json` → capture its `content` as `execution_draft`.
 
-If no `present_file` was captured:
+If no matching entry found in `present_files`:
 > "The agent did not return execution tasks. Would you like to try again? (y/n)"
 - **y** → re-send the same message. Repeat this step.
 - **n** → stop.

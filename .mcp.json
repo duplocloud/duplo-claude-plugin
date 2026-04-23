@@ -4,7 +4,8 @@
       "type": "http",
       "url": "${DUPLO_HELPDESK_URL}/mcp",
       "headers": {
-        "Authorization": "Bearer ${DUPLO_TOKEN}"
+        "Authorization": "Bearer ${DUPLO_TOKEN}",
+        "X-Response-Format": "toon"
       }
     }
   }

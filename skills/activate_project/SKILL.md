@@ -75,7 +75,7 @@ If the list is empty: tell the user "No projects found in this workspace. Please
   Proceed to Step 4.
 - Otherwise → tell the user:
   > "Auto-selecting 🟢 **\<name\>** — it's the only project available."
-  Set `project_id` and `project_name`. Proceed to Step 4.
+  Capture `id` as `project_id` and `name` as `project_name`. Proceed to Step 4.
 
 **Case B — multiple remote projects, `project_id` present in state AND found in remote list:**
 > "Active project: 🟢 **\<project_name\>**. Would you like to continue with this project or select a different one?
@@ -100,7 +100,9 @@ Available projects:
 ```
 Ask: "Which project would you like to activate?"
 
-Wait for selection. Capture `id` → `project_id`, `name` → `project_name`.
+Wait for selection. Capture:
+- **`id`** field → `project_id`
+- **`name`** field → `project_name`
 
 ---
 
@@ -160,3 +162,17 @@ Based on the health data, suggest the next action:
 | Both **Approved**, no tasks | "Spec and plan are approved but no execution stages yet. Would you like to generate them now? (y/n)" → if y, follow `skills/ai_planner/SKILL.md` |
 
 If the user declines any prompt: stop.
+
+---
+
+## Available project commands
+
+Once a project is active, the user can run:
+
+| Command | What it does |
+|---------|-------------|
+| `/duplo:ai_planner` | Run the AI Planner to write or refine spec, plan, and tasks |
+| `/duplo:write_spec` | Write or update the project spec |
+| `/duplo:write_plan` | Write or update the implementation plan |
+| `/duplo:activate_ticket` | Pick up a ticket under this project |
+| `/duplo:clear_canvas` | **Explicitly reset** the spec, plan, and canvas files (requires confirmation) |

@@ -84,13 +84,61 @@ source .env   # sets DUPLO_TOKEN and DUPLO_HELPDESK_URL
 - `DUPLO_TOKEN` — Bearer token for API auth
 - `DUPLO_HELPDESK_URL` — Helpdesk server base URL (also used as `platform_context.duplo_base_url` when sending messages to the agent)
 
+## TOON Response Format
+
+The MCP server returns all responses in **TOON (Token-Optimized Object Notation)** — compact JSON with abbreviated keys and compacted values. The `.mcp.json` header `X-Response-Format: toon` enables this.
+
+**Reading TOON:** Every response starts with the `toon|` prefix followed by compact JSON. Strip the prefix to get parseable JSON. Example: `toon|{"ok":"T","d":[...]}` → parse `{"ok":"T","d":[...]}`.
+
+**Value compaction:** `null` → `"~"`, `true` → `"T"`, `false` → `"F"`.
+
+**Schema arrays:** Uniform object arrays use `{"_sch":[keys],"_dat":[[values],…]}`. To read row N, zip `_sch` with `_dat[N]`.
+
+**Key abbreviation reference (most common):**
+
+| Original | TOON | Original | TOON |
+|----------|------|----------|------|
+| id | `i` | name | `n` |
+| type | `t` | status | `s` |
+| title | `ttl` | description | `desc` |
+| content | `cnt` | data | `d` |
+| success | `ok` | result | `res` |
+| errors | `errs` | message | `m` |
+| text | `txt` | present_files | `pf` |
+| path | `p` | message_id | `mid` |
+| executed_tool_calls | `etc` | turn_usage | `tu` |
+| workspaceId | `wid` | ticketName | `tn` |
+| aiAgentId | `agid` | project | `prj` |
+| isActive | `act` | version | `ver` |
+| createdAt | `ca` | created_at | `c_at` |
+| updatedAt | `ua` | updated_at | `u_at` |
+| metaData | `mdata` | approvalState | `aprv` |
+| spec | `spc` | plan | `pln` |
+| execution | `exec` | stages | `stg` |
+| tasks | `tsk` | progress | `prog` |
+| input_tokens | `itk` | output_tokens | `otk` |
+
 ## Agent Communication
 
-**HARD RULE: Claude must never act as an agent replacement.** If an agent call returns no response, an empty response, or an error — display the error and stop. Do not attempt to answer the user's question yourself. The agent is the sole responder; Claude only handles ticket/project lifecycle.
+**When a ticket is active, Claude relays communication between the user and the agent, and handles ticket lifecycle (activate, create, close, save canvas files).**
 
-**The agent writes canvas files (spec.md, plan.md, execution_tasks.json) but cannot call platform APIs directly. The plugin is responsible for reading the canvas content from `present_file` SSE events and pushing it to the project via `Projects_patch` or `Projects_update_plan_execution`.**
+**Claude must NEVER:**
+- Retry, re-send, or rephrase the user's message to the agent
+- Generate content (specs, plans, code, tasks) that the agent should produce
+- Answer the user's question itself instead of forwarding it to the agent
+- **Summarise, condense, or paraphrase the agent's response** — output it in full, exactly as received. The only exception is if the user explicitly asks for a summary.
 
-When a ticket is active, **the assigned agent is the sole responder to the user's messages**. Claude Code handles ticket lifecycle only (activate, create, close, spec, plan). Do not add your own response to user messages — forward them to the agent and display the agent's reply.
+**Claude must ALWAYS:**
+- Forward the user's message to the agent exactly as given
+- Present the agent's `text` response **in full** — never summarise or truncate. Apply Markdown formatting for readability (tables, headings, code blocks) but do not drop any content.
+- Display `present_files` canvas content inline immediately after the agent's text (see step 5 below)
+- Save canvas files (`present_files`) to the project when the user confirms
+
+**On timeout or auth errors:** Tell the user:
+> "The agent request timed out. This may be an authentication issue."
+Then stop and wait. Do NOT retry unless the user explicitly asks.
+
+**The agent writes canvas files (spec.md, plan.md, execution_tasks.json) but cannot call platform APIs directly. The plugin reads canvas content from `pf` and pushes it to the project via `Projects_patch` or `Projects_update_plan_execution`.**
 
 When the user sends a message with an active ticket:
 
@@ -109,25 +157,19 @@ When the user sends a message with an active ticket:
      }
    }
    ```
-3. **Parse the streaming response.** The tool returns raw SSE events. From the response:
+3. **Read the plain JSON response.** The MCP server pre-assembles the SSE stream into a single JSON object (plain JSON, not TOON). Key fields:
 
-   **Assemble agent text** — concatenate all `text_delta` values in order:
-   ```
-   event: message
-   data: {"type":"text_delta","text":"..."}
-   ```
-   Join every `"type":"text_delta"` block's `"text"` value into a single string. That is the agent's full response.
+   - `text` — the agent's full text response (pre-assembled from all `text_delta` chunks).
+   - `present_files` — array of canvas files. Each entry has `path` and `content`. These are needed by skills that save canvas content back to the project.
+   - `message_id` — informational, ignore.
+   - `executed_tool_calls` — informational, ignore.
+   - `turn_usage` — informational, ignore.
 
-   **Capture canvas files** — collect any `present_file` events:
-   ```
-   event: message
-   data: {"type":"present_file","path":"canvas-documents/execution_tasks.json","content":"..."}
-   ```
-   Store the `path` and `content` for each `present_file` event. These are needed by skills that save canvas content back to the project (e.g., ai_planner execution phase).
+   Not all fields are always present. `text` is the agent's prose reply (may be a summary or commentary). `present_files` carries the **actual artifact content** (spec, plan, tasks) — it is always the authoritative output when present.
 
-   Ignore all other event types (`message_id`, `executed_tool_calls`, `turn_usage`, `done`, etc.).
+   **HARD RULE: `present_files` content MUST always be displayed in full, inline, immediately after the agent's `text`. Never skip or defer it.**
 
-4. If the assembled text is empty, or the tool call failed entirely, display:
+4. If `text` is absent or empty, or the tool call failed entirely, display:
    > "Agent not available."
    Then fetch the agent list: call `duplo-helpdesk::Workspaces_get_agents` with `id = workspace_id` and show:
    > "Would you like to switch to a different agent?
@@ -135,7 +177,14 @@ When the user sends a message with an active ticket:
    > 2. ..."
    On selection, call `duplo-helpdesk::Ticket_put_assignee` with `workspaceId`, `ticketName`, and `agentId` of the selected agent. Tell the user the new agent is assigned, then stop and wait for their next message.
    Do not answer the user's original message yourself under any circumstances.
-5. Output the assembled agent text as your reply text verbatim. Do not add commentary or wrap it.
+5. Output the **complete, unabridged** `text` value as your reply. Apply Markdown formatting for readability but never drop content. Do not add your own opinions or answers beyond what the agent provided.
+
+6. **HARD RULE: If `present_files` is present and non-empty, you MUST display every canvas file's full content inline immediately below the agent's text.** Format each file as a Markdown section with its `path` as the heading, followed by the full `content` in a fenced code block. Do NOT skip, truncate, or defer this — the file content is the real artifact; the agent's `text` is only commentary.
+
+   After displaying all canvas files, ask the user:
+   > "The agent produced the above canvas file(s). Shall I save them to the project? (y/n)"
+   - **y** — call `duplo-helpdesk::Projects_patch` (for spec/plan) or `duplo-helpdesk::Projects_update_plan_execution` (for execution tasks) as appropriate. Confirm saved.
+   - **n** — acknowledge and stop.
 
 If any MCP tool call fails, always show the error in a code block:
 ```
@@ -203,6 +252,15 @@ When the user explicitly asks to close the ticket (e.g. "close the ticket", "mar
 When saving is explicitly requested:
 1. Ask the user for confirmation: "Shall I save a summary of this work to the ticket? (y/n)"
 2. If confirmed — read and follow `skills/save_summary/SKILL.md`.
+
+## Canvas Clear
+
+**STRICT RULE: Never clear the spec, plan, or canvas files unless the user explicitly requests it** (e.g. "clear the canvas", "reset the spec and plan", "wipe canvas files"). No other trigger is valid.
+
+This operation is **project-scoped** — it requires an active project (`project_id` in state). If no project is active, tell the user to run `/duplo:activate_project` first and stop.
+
+When explicitly requested:
+1. Read and follow `skills/clear_canvas/SKILL.md`.
 
 ## MCP Tool Logging
 
