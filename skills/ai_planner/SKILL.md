@@ -61,8 +61,23 @@ This returns all AI Planner tickets linked to this project. Filter for tickets w
 
   Call `duplo-helpdesk::Workspaces_get_scopes` with `id = workspace_id` and `duplo-helpdesk::Workspaces_get_personas` with `id = workspace_id` in parallel.
   - Collect all scope IDs as `scope_ids` (array of `id` from each scope in the response).
-  - Collect all persona IDs as `persona_ids` (array of `id` from each persona in the response).
   - If either call fails or returns empty, use `[]` for that field — do not block ticket creation.
+
+  From the personas response (already fetched in parallel above):
+  - **Call failed or empty** → `persona_ids = []`.
+  - **Exactly one persona** → auto-select it, tell the user:
+    > "Auto-selecting persona 🟢 **\<name\>** — it's the only one available."
+    Set `persona_ids = [<that persona's id>]`.
+  - **Multiple personas** → show a numbered multi-select list using **name** only (no IDs):
+    ```
+    Which personas should have access to this ticket? (enter comma-separated numbers, or press Enter to skip)
+    1. <name>
+    2. <name>
+    ...
+    ```
+    Wait for input:
+    - User enters numbers → capture those persona IDs as `persona_ids`.
+    - User presses Enter / skips → `persona_ids = []`.
 
   Call `duplo-helpdesk::Ticket_create`:
   ```json
@@ -86,7 +101,9 @@ This returns all AI Planner tickets linked to this project. Filter for tickets w
     }
   }
   ```
-  
+
+  Omit `ticketContextForAgent` entirely if both `scope_ids` and `persona_ids` are empty.
+
   Call the MCP tool and set `active_ticket_name` and save state.
   
   Set `active_ticket_name` and save state.

@@ -58,20 +58,26 @@ Based on comprehensive analysis of the duplo-claude-plugin codebase, the Ticket 
   "aiAgentId": "<agent_id>",
   "workspaceId": "<workspace_id>",
   "origin": "api",
+  "ticketContextForAgent": {
+    "personaIds": ["<persona_ids>"]
+  },
   "originContext": {
     "type": "Project",
     "id": "<project_id>",
-    "subType": "plan_execution",
+    "subType": "execution",
     "metadata": { 
-      "taskId": "<task_id>" 
+      "taskId": "<task_id>",
+      "projectType": "plan_execution"
     }
   }
 }
 ```
 **Source:** [skills/activate_ticket/SKILL.md](skills/activate_ticket/SKILL.md#L216)  
 **Field Details:**
-- `originContext.subType` = `"plan_execution"` (for execution task tickets)
+- `origin` = `"api"` (when created by skills; `"helpdesk"` when created from portal)
+- `originContext.subType` = `"execution"` (for execution task tickets)
 - `originContext.metadata.taskId` = UUID of the execution task
+- `originContext.metadata.projectType` = `"plan_execution"`
 
 #### Pattern D: AI Planner Ticket (Extended)
 ```json

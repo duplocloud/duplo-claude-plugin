@@ -131,7 +131,9 @@ From the response extract:
   - content absent or blank → **Not started**
 - `plan.content` → `plan_content` (string, may be blank or absent)
 - `plan.metaData.approvalState` → `plan_state` (same logic as spec)
-- `execution.stages` → `has_execution_tasks` = true if any stage has tasks
+- `execution.stages` → `stages` (full array; store for use in Steps 8–12)
+- `execution.version` → `execution_version`
+- `has_execution_tasks` = true if any stage in `stages` has at least one task
 
 ---
 
@@ -151,28 +153,54 @@ Display the health table:
 
 ## Step 7 — Routing
 
-Based on the health data, suggest the next action:
+Based on the health data, determine the next action:
+
+**Case 1: Execution tasks already exist** (`has_execution_tasks` = true)
+→ Proceed to **Step 7b** (show full menu) — users can work on tasks while refining spec/plan.
+
+**Case 2: No execution tasks yet** (`has_execution_tasks` = false)
+→ Based on spec/plan states, suggest the next action:
 
 | Condition | Prompt |
 |---|---|
 | Spec **Not started** | "This project doesn't have a spec yet. Would you like to start the AI Planner? (y/n)" → if y, follow `skills/ai_planner/SKILL.md` |
 | Spec **Draft** | "There's a spec draft in progress. Would you like to continue with the AI Planner to refine or confirm it? (y/n)" → if y, follow `skills/ai_planner/SKILL.md` |
 | Spec **Approved**, plan **Not started** or **Draft** | "Spec is approved. Would you like to continue with the AI Planner to build the plan? (y/n)" → if y, follow `skills/ai_planner/SKILL.md` |
-| Both **Approved**, `has_execution_tasks` = true | "Both spec and plan are approved and tasks are ready. Run `/duplo:ai_planner` to manage tasks or `/duplo:activate_ticket` to pick up a task." |
-| Both **Approved**, no tasks | "Spec and plan are approved but no execution stages yet. Would you like to generate them now? (y/n)" → if y, follow `skills/ai_planner/SKILL.md` |
+| Both **Approved** | Proceed to **Step 7b** (show full menu) |
 
 If the user declines any prompt: stop.
 
 ---
 
-## Available project commands
+## Step 7b — Both Spec and Plan Approved (menu routing)
+
+**Execute this step when both spec and plan are approved** (regardless of whether execution tasks exist).
+
+Ask:
+> "Spec and plan are approved. What would you like to do?
+> 1. Edit spec
+> 2. Edit plan
+> 3. Work on execution tasks
+> 4. Done"
+
+- **1** → Tell the user: "Run `/duplo:write_spec` to edit the spec." Then stop.
+- **2** → Tell the user: "Run `/duplo:write_plan` to edit the plan." Then stop.
+- **3** → Check `has_execution_tasks`:
+  - If true → Follow `skills/stage_tasks/SKILL.md` (project is already active, so **Step 0a is skipped** — jump directly to Step 0b). After stage_tasks completes, the skill ends.
+  - If false → Tell the user: "No execution stages exist yet. Run `/duplo:ai_planner` to generate stages and tasks first." Then stop.
+- **4** → Stop.
+
+---
+
+## Step 8 — Available project commands
 
 Once a project is active, the user can run:
 
 | Command | What it does |
-|---------|-------------|
-| `/duplo:ai_planner` | Run the AI Planner to write or refine spec, plan, and tasks |
+|---------|-------------| | `/duplo:ai_planner` | Run the AI Planner to write or refine spec, plan, and tasks |
 | `/duplo:write_spec` | Write or update the project spec |
 | `/duplo:write_plan` | Write or update the implementation plan |
 | `/duplo:activate_ticket` | Pick up a ticket under this project |
+| `/duplo:stage_tasks` | Manage execution stages and tasks — list, add, edit, delete, create tickets (jumps to `stage_tasks` skill) |
 | `/duplo:clear_canvas` | **Explicitly reset** the spec, plan, and canvas files (requires confirmation) |
+

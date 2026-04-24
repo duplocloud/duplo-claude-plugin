@@ -186,6 +186,27 @@ Which agent should handle this ticket?
 
 ---
 
+### Step 4d.5 — Select personas
+
+Call `duplo-helpdesk::Workspaces_get_personas` with `id = workspace_id` (always fetch fresh from backend).
+
+- **Call fails or returns empty list** → set `selected_persona_ids = []` and proceed to Step 4e.
+- **Exactly one persona returned** → auto-select it, tell the user:
+  > "Auto-selecting persona 🟢 **\<name\>** — it's the only one available."
+  Set `selected_persona_ids = [<that persona's id>]`. Proceed to Step 4e.
+- **Multiple personas** → show a numbered multi-select list using persona **name** only (no IDs):
+  ```
+  Which personas should have access to this ticket? (enter comma-separated numbers, or press Enter to skip)
+  1. <name>
+  2. <name>
+  ...
+  ```
+  Wait for input:
+  - User enters numbers (e.g. `1,3`) → capture the IDs of the selected personas as `selected_persona_ids`.
+  - User presses Enter / skips → `selected_persona_ids = []`.
+
+---
+
 ### Step 4e — Create the ticket
 
 **Standalone ticket** — call `duplo-helpdesk::Ticket_create` with `workspaceId = workspace_id` and body:
@@ -194,9 +215,14 @@ Which agent should handle this ticket?
   "title": "<user-provided title>",
   "aiAgentId": "<selected agent id>",
   "workspaceId": "<workspace_id>",
-  "origin": "api"
+  "origin": "api",
+  "ticketContextForAgent": {
+    "personaIds": ["<selected_persona_ids>"]
+  }
 }
 ```
+
+Omit `ticketContextForAgent` entirely if `selected_persona_ids` is empty.
 
 **Spec or plan creation ticket** (when `project_ticket_type` is set) — call `duplo-helpdesk::Ticket_create` with `workspaceId = workspace_id` and body:
 ```json
@@ -205,6 +231,9 @@ Which agent should handle this ticket?
   "aiAgentId": "<selected agent id>",
   "workspaceId": "<workspace_id>",
   "origin": "api",
+  "ticketContextForAgent": {
+    "personaIds": ["<selected_persona_ids>"]
+  },
   "originContext": {
     "type": "Project",
     "id": "<project_id>",
@@ -213,38 +242,39 @@ Which agent should handle this ticket?
 }
 ```
 
+Omit `ticketContextForAgent` entirely if `selected_persona_ids` is empty.
+
 **Execution task ticket** — call `duplo-helpdesk::Ticket_create` with `workspaceId = workspace_id` and body:
+
+**HARD RULE: `taskId` MUST be inside `originContext.metadata`. Never place `taskId` as a top-level field. The ticket will NOT be linked to the task if the structure is wrong.**
 ```json
 {
   "title": "<task_title>",
   "aiAgentId": "<selected agent id>",
   "workspaceId": "<workspace_id>",
   "origin": "api",
+  "ticketContextForAgent": {
+    "personaIds": ["<selected_persona_ids>"]
+  },
   "originContext": {
     "type": "Project",
     "id": "<project_id>",
-    "subType": "plan_execution",
-    "metadata": { "taskId": "<task_id>" }
+    "subType": "execution",
+    "metadata": {
+      "taskId": "<task_id>",
+      "projectType": "plan_execution"
+    }
   }
 }
 ```
+
+Omit `ticketContextForAgent` entirely if `selected_persona_ids` is empty.
 
 Capture the returned ticket's `name` as `active_ticket_name` (stored internally).
 
 ---
 
-## Step 5 — Mark ticket as in progress
-
-Call `duplo-helpdesk::Ticket_put_status` with `workspaceId = workspace_id`, `ticketName = active_ticket_name`, and body:
-```json
-{ "status": "inProgress" }
-```
-
-This is safe to call unconditionally — the backend accepts it even if the ticket is already in progress.
-
----
-
-## Step 6 — Load past context
+## Step 5 — Load past context
 
 Call `duplo-helpdesk::Ticket_get_messages` with `workspaceId = workspace_id`, `ticketName = active_ticket_name`.
 
@@ -253,7 +283,7 @@ Call `duplo-helpdesk::Ticket_get_messages` with `workspaceId = workspace_id`, `t
 
 ---
 
-## Step 7 — Save state
+## Step 6 — Save state
 
 Write `.duplocloud/state.toon` silently, preserving any existing `project_id` and `project_name` fields:
 ```
@@ -264,6 +294,26 @@ active_ticket_name: <active_ticket_name>
 tickets[N]{name,title,status,aiAgentId}:
   <row per ticket>
 ```
+
+---
+
+## Step 6b — Ticket lifecycle rules
+
+**HARD RULES — apply for the entire duration this ticket is active:**
+
+- **On creation or activation:** Leave ticket in `open` state. Do NOT call `Ticket_put_status` automatically.
+- **When the user sends their first message or activity begins:** Call `duplo-helpdesk::Ticket_put_status` with `{ "status": "inProgress" }` before forwarding the message to the agent.
+- **When the user confirms changes, says they are done, or explicitly finishes the activity:** Call `duplo-helpdesk::Ticket_put_status` with `{ "status": "closed", "disposition": "resolved" }`. Remove `active_ticket_name` from state. Tell the user the ticket has been closed.
+
+Do NOT close the ticket automatically for any other reason. Only close when the user explicitly confirms they are done with the activity on this ticket.
+
+**HARD RULES — apply for the entire duration this ticket is active:**
+
+- **On creation or activation:** Leave ticket in `open` state. Do NOT call `Ticket_put_status` automatically.
+- **When the user sends their first message or activity begins:** Call `duplo-helpdesk::Ticket_put_status` with `{ "status": "inProgress" }` before forwarding the message to the agent.
+- **When the user confirms changes, says they are done, or explicitly finishes the activity:** Call `duplo-helpdesk::Ticket_put_status` with `{ "status": "closed", "disposition": "resolved" }`. Remove `active_ticket_name` from state. Tell the user the ticket has been closed.
+
+Do NOT close the ticket automatically for any other reason. Only close when the user explicitly confirms they are done with the activity on this ticket.
 
 ---
 
