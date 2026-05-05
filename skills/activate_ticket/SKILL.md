@@ -62,7 +62,20 @@ If the newly selected workspace **differs** from what was in state: **clear `act
 
 After workspace is resolved (whether auto-selected or chosen via Step 1a):
 
-Call `duplo-helpdesk::Ticket_list` with `workspaceId = workspace_id`.
+**If `DUPLO_AGENT_MODE=false` or not set (local agent mode)**: call these in parallel (one tool-call group):
+- `duplo-helpdesk::Ticket_list` with `workspaceId = workspace_id`
+- `duplo-helpdesk::Workspaces_get_personas` with `id = workspace_id`
+- `duplo-helpdesk::Workspaces_get_scopes` with `id = workspace_id`
+- `duplo-helpdesk::Workspaces_get_skills` with `id = workspace_id` — workspace-specific skills via personas
+- `duplo-helpdesk::Workspaces_get_skills_built_in_files` (no parameters) — platform built-in skill files
+- `duplo-helpdesk::Projects_get` with `id = project_id` ← only if `project_id` is in state
+
+Write all of the following in the single end-of-step Bash flush:
+- `.duplocloud/state.toon` — with `tickets` array
+- `~/.duplocloud/workspace_context.json` — using the personas, scopes, skills, and project data; set `fetched_at` to now (ISO 8601 UTC). See **Local Agent Context** section in `CLAUDE.md` for schema.
+- `~/.duplocloud/skills/<skillName>/<path>` — for each entry from `Workspaces_get_skills_built_in_files` write `content` to the corresponding path. For each workspace skill with non-empty `skillMd` write to `~/.duplocloud/skills/<name>/SKILL.md`. Create `~/.duplocloud/skills/` directory first.
+
+**If `DUPLO_AGENT_MODE=true` (remote agent)**: call only `duplo-helpdesk::Ticket_list` with `workspaceId = workspace_id`.
 
 Store the results in `.duplocloud/state.toon` under a `tickets` field:
 ```
@@ -175,9 +188,14 @@ Ask the user: "What should we call this ticket?"
 
 ### Step 4d — Pick an agent
 
-Call `duplo-helpdesk::Workspaces_get_agents` with `id = workspace_id`.
+Call `duplo-helpdesk::Workspaces_get_agents` with `id = workspace_id` (always fetch — needed in both modes).
 
-Show a numbered list using agent **name** only (no IDs or endpoints):
+**If `DUPLO_AGENT_MODE=false` or not set (local agent mode):** auto-select silently — do NOT prompt the user:
+- If an agent whose name contains "generic" (case-insensitive) exists → use its `id`. Tell the user: "Auto-selecting agent 🟢 **\<name\>**."
+- Else if any agents are returned → use the first agent's `id`. Tell the user: "Auto-selecting agent 🟢 **\<name\>**."
+- Else (no agents) → `selected_agent_id = null`.
+
+**If `DUPLO_AGENT_MODE=true`:** Show a numbered list using agent **name** only (no IDs or endpoints):
 ```
 Which agent should handle this ticket?
 1. <name>
@@ -213,7 +231,7 @@ Call `duplo-helpdesk::Workspaces_get_personas` with `id = workspace_id` (always 
 ```json
 {
   "title": "<user-provided title>",
-  "aiAgentId": "<selected agent id>",
+  "aiAgentId": "<selected_agent_id — omit this field if null>",
   "workspaceId": "<workspace_id>",
   "origin": "api",
   "ticketContextForAgent": {
@@ -222,13 +240,13 @@ Call `duplo-helpdesk::Workspaces_get_personas` with `id = workspace_id` (always 
 }
 ```
 
-Omit `ticketContextForAgent` entirely if `selected_persona_ids` is empty.
+Omit `aiAgentId` entirely if `selected_agent_id` is null. Omit `ticketContextForAgent` entirely if `selected_persona_ids` is empty.
 
 **Spec or plan creation ticket** (when `project_ticket_type` is set) — call `duplo-helpdesk::Ticket_create` with `workspaceId = workspace_id` and body:
 ```json
 {
   "title": "<project_name> — <spec_creation or plan_creation>",
-  "aiAgentId": "<selected agent id>",
+  "aiAgentId": "<selected_agent_id — omit this field if null>",
   "workspaceId": "<workspace_id>",
   "origin": "api",
   "ticketContextForAgent": {
@@ -242,7 +260,7 @@ Omit `ticketContextForAgent` entirely if `selected_persona_ids` is empty.
 }
 ```
 
-Omit `ticketContextForAgent` entirely if `selected_persona_ids` is empty.
+Omit `aiAgentId` entirely if `selected_agent_id` is null. Omit `ticketContextForAgent` entirely if `selected_persona_ids` is empty.
 
 **Execution task ticket** — call `duplo-helpdesk::Ticket_create` with `workspaceId = workspace_id` and body:
 
@@ -250,7 +268,7 @@ Omit `ticketContextForAgent` entirely if `selected_persona_ids` is empty.
 ```json
 {
   "title": "<task_title>",
-  "aiAgentId": "<selected agent id>",
+  "aiAgentId": "<selected_agent_id — omit this field if null>",
   "workspaceId": "<workspace_id>",
   "origin": "api",
   "ticketContextForAgent": {
@@ -268,7 +286,7 @@ Omit `ticketContextForAgent` entirely if `selected_persona_ids` is empty.
 }
 ```
 
-Omit `ticketContextForAgent` entirely if `selected_persona_ids` is empty.
+Omit `aiAgentId` entirely if `selected_agent_id` is null. Omit `ticketContextForAgent` entirely if `selected_persona_ids` is empty.
 
 Capture the returned ticket's `name` as `active_ticket_name` (stored internally).
 
@@ -318,6 +336,10 @@ Do NOT close the ticket automatically for any other reason. Only close when the 
 ---
 
 ## Step 7b — Confirm or change the agent
+
+**If `DUPLO_AGENT_MODE=false` or not set (local agent mode):** skip this step entirely. Claude handles all responses directly — no remote agent assignment needed.
+
+**If `DUPLO_AGENT_MODE=true`:**
 
 Call `duplo-helpdesk::Workspaces_get_agents` with `id = workspace_id`.
 

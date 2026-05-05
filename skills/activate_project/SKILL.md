@@ -67,17 +67,26 @@ If the newly selected workspace **differs** from what was in state: **clear `pro
 
 Call `duplo-helpdesk::Projects_list` with `workspaceId = workspace_id`.
 
+**TOON parsing — do this before any case logic:**
+The response is TOON-encoded. Strip the `toon|` prefix and parse JSON. The project list is under `d.itms` (not a top-level array). `itms` will be either:
+- A plain array of objects → use as-is.
+- A schema array `{ "_sch": [...], "_dat": [[...], ...] }` → expand by zipping each `_dat` row with `_sch` to produce plain objects.
+
+TOON key map for project fields: `i` = id, `n` = name, `desc` = description, `act` = isActive. Use these when reading project properties.
+
+After expanding, `projects` is a plain list of objects. Proceed with case logic below.
+
 If the list is empty: tell the user "No projects found in this workspace. Please create a project in the DuploCloud portal first." and stop.
 
 **Case A — only one remote project:**
-- If it matches `project_id` in local state → tell the user:
-  > "Auto-selecting 🟢 **\<name\>** — it matches your saved session."
+- If its `i` matches `project_id` in local state → tell the user:
+  > "Auto-selecting 🟢 **\<n\>** — it matches your saved session."
   Proceed to Step 4.
 - Otherwise → tell the user:
-  > "Auto-selecting 🟢 **\<name\>** — it's the only project available."
-  Capture `id` as `project_id` and `name` as `project_name`. Proceed to Step 4.
+  > "Auto-selecting 🟢 **\<n\>** — it's the only project available."
+  Capture `i` as `project_id` and `n` as `project_name`. Proceed to Step 4.
 
-**Case B — multiple remote projects, `project_id` present in state AND found in remote list:**
+**Case B — multiple remote projects, `project_id` present in state AND found in remote list (match on `i`):**
 > "Active project: 🟢 **\<project_name\>**. Would you like to continue with this project or select a different one?
 > 1. Continue with **\<project_name\>**
 > 2. Select from list"
@@ -101,12 +110,24 @@ Available projects:
 Ask: "Which project would you like to activate?"
 
 Wait for selection. Capture:
-- **`id`** field → `project_id`
-- **`name`** field → `project_name`
+- **`i`** field (TOON for `id`) → `project_id`
+- **`n`** field (TOON for `name`) → `project_name`
 
 ---
 
 ## Step 4 — Save state
+
+**If `DUPLO_AGENT_MODE=false` or not set (local agent mode)**: call these in parallel with the state write (one tool-call group):
+- `duplo-helpdesk::Workspaces_get_personas` with `id = workspace_id`
+- `duplo-helpdesk::Workspaces_get_scopes` with `id = workspace_id`
+- `duplo-helpdesk::Workspaces_get_skills` with `id = workspace_id` — workspace-specific skills via personas
+- `duplo-helpdesk::Workspaces_get_skills_built_in_files` (no parameters) — platform built-in skill files
+- `duplo-helpdesk::Projects_get` with `id = project_id`
+
+Write all of the following in the single Bash flush:
+- `.duplocloud/state.toon` — workspace + project state
+- `~/.duplocloud/workspace_context.json` — with `fetched_at` set to now (ISO 8601 UTC), personas, scopes, skills, and project data. See **Local Agent Context** section in `CLAUDE.md` for schema.
+- `~/.duplocloud/skills/<skillName>/<path>` — for each entry from `Workspaces_get_skills_built_in_files` write `content` to the corresponding path. For each workspace skill with non-empty `skillMd` write to `~/.duplocloud/skills/<name>/SKILL.md`. Create `~/.duplocloud/skills/` directory first.
 
 Write `.duplocloud/state.toon` silently using bash, preserving any existing `active_ticket_name` and `tickets` fields if the workspace has not changed:
 ```

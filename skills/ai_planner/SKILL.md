@@ -55,13 +55,28 @@ This returns all AI Planner tickets linked to this project. Filter for tickets w
 - **Found** → tell the user:
   > "Resuming AI Planner ticket **\<ticket_name\>** for project **\<project_name\>**."
 
-  Set `active_ticket_name`. Save state. Proceed to Step 2.
+  Set `active_ticket_name`. Call `duplo-helpdesk::Ticket_put_status` with `workspaceId = workspace_id`, `ticketName = active_ticket_name`, and body `{ "status": "inProgress" }`. Save state. Proceed to Step 2.
 
-- **Not found** → ask the user for an agent, then fetch workspace context and create the ticket:
+- **Not found** → fetch workspace context and create the ticket:
 
   Call `duplo-helpdesk::Workspaces_get_scopes` with `id = workspace_id` and `duplo-helpdesk::Workspaces_get_personas` with `id = workspace_id` in parallel.
   - Collect all scope IDs as `scope_ids` (array of `id` from each scope in the response).
   - If either call fails or returns empty, use `[]` for that field — do not block ticket creation.
+
+  Call `duplo-helpdesk::Workspaces_get_agents` with `id = workspace_id` (always fetch — needed in both modes).
+
+  **If `DUPLO_AGENT_MODE=true`**: ask the user to pick one:
+  ```
+  Which agent should handle this ticket?
+  1. <name> — <description>
+  2. ...
+  ```
+  Set `selected_agent_id` to the chosen agent's `id`.
+
+  **If `DUPLO_AGENT_MODE=false` or not set**: auto-select silently — do NOT prompt the user:
+  - If an agent whose name contains "generic" (case-insensitive) exists → use its `id`. Tell the user: "Auto-selecting agent 🟢 **\<name\>**."
+  - Else if any agents are returned → use the first agent's `id`. Tell the user: "Auto-selecting agent 🟢 **\<name\>**."
+  - Else (no agents) → `selected_agent_id = null`.
 
   From the personas response (already fetched in parallel above):
   - **Call failed or empty** → `persona_ids = []`.
@@ -83,7 +98,7 @@ This returns all AI Planner tickets linked to this project. Filter for tickets w
   ```json
   {
     "title": "<project_name> AI Planner",
-    "aiAgentId": "<selected agent id>",
+    "aiAgentId": "<selected_agent_id — omit this field if null>",
     "workspaceId": "<workspace_id>",
     "source": "helpdesk",
     "ticketContextForAgent": {
@@ -102,11 +117,9 @@ This returns all AI Planner tickets linked to this project. Filter for tickets w
   }
   ```
 
-  Omit `ticketContextForAgent` entirely if both `scope_ids` and `persona_ids` are empty.
+  Omit `aiAgentId` entirely if `selected_agent_id` is null. Omit `ticketContextForAgent` entirely if both `scope_ids` and `persona_ids` are empty.
 
-  Call the MCP tool and set `active_ticket_name` and save state.
-  
-  Set `active_ticket_name` and save state.
+  Call the MCP tool and capture the returned ticket's `name` as `active_ticket_name`. Call `duplo-helpdesk::Ticket_put_status` with `workspaceId = workspace_id`, `ticketName = active_ticket_name`, and body `{ "status": "inProgress" }`. Save state.
 
 ---
 
@@ -148,6 +161,13 @@ Determine current phase:
 If not already shown: tell the user:
 > "Let's define the spec. Describe what you'd like to achieve:"
 
+**If `DUPLO_AGENT_MODE=false` or not set (local agent mode):**
+1. **Record user message** (tool call) — call `duplo-helpdesk::Ticket_send_message` with `workspaceId = workspace_id`, `ticketName = active_ticket_name`, and body: `{ "content": "<user input>", "role": "user", "message_mode": 1, "data": {} }`
+2. Load `~/.duplocloud/skills/duplo-project-management/spec-phase.md` if it exists and follow its instructions to write the spec. If absent, use general judgment.
+3. Write the spec content to the user now (display it).
+4. **HARD RULE — Record assistant message immediately after displaying, before asking any question** (tool call) — call `duplo-helpdesk::Ticket_send_message` with `workspaceId = workspace_id`, `ticketName = active_ticket_name`, and body: `{ "content": "<the spec content just displayed>", "role": "assistant", "message_mode": 1, "data": {} }`. Set `spec_draft` to this content. This call MUST happen in the same response turn — do NOT ask the refine/confirm question until this tool call completes.
+
+**If `DUPLO_AGENT_MODE=true` (remote agent):**
 Send the user's input via `duplo-helpdesk::Ticket_send_message_streaming`:
 ```json
 {
@@ -166,17 +186,18 @@ Send the user's input via `duplo-helpdesk::Ticket_send_message_streaming`:
   }
 }
 ```
-
 Apply agent availability hard rule. From the plain JSON response:
 - Read `text` → display the agent's full text verbatim.
 - Check `present_files` for an entry where `path` ends with `spec.md` → capture its `content` as `spec_draft`.
 
+---
+
 Ask:
 > "Would you like to refine the spec or confirm it? (refine / confirm)"
 
-- **refine** → send follow-up with same `project_context`, display response, re-capture `spec_draft`. Repeat.
+- **refine** → (local mode) ask what to change, rewrite the spec incorporating the feedback, repeat steps 1–5, update `spec_draft`; (remote mode) send follow-up with same `project_context`, display response, re-capture `spec_draft`. Repeat.
 - **confirm** → save:
-  1. Use `spec_draft` (from `present_files`) if captured; otherwise use the `text` value.
+  1. Use `spec_draft` if captured; otherwise use the `text` value (remote) or the spec content you wrote (local).
   2. Call `duplo-helpdesk::Projects_patch` with body `{ "spec": { "content": "<spec_draft>" } }`
   3. Tell the user: "Spec saved."
   4. Proceed to Step 4.
@@ -190,6 +211,13 @@ Fetch updated project: call `duplo-helpdesk::Projects_get` with `id = project_id
 Tell the user:
 > "Now let's build the plan. Describe your approach or say 'generate from spec':"
 
+**If `DUPLO_AGENT_MODE=false` or not set (local agent mode):**
+1. **Record user message** (tool call) — call `duplo-helpdesk::Ticket_send_message` with `workspaceId = workspace_id`, `ticketName = active_ticket_name`, and body: `{ "content": "<user input>", "role": "user", "message_mode": 1, "data": {} }`
+2. Load `~/.duplocloud/skills/duplo-project-management/plan-phase.md` if it exists and follow its instructions to write the plan. If absent, use general judgment.
+3. Write the plan content to the user now (display it).
+4. **HARD RULE — Record assistant message immediately after displaying, before asking any question** (tool call) — call `duplo-helpdesk::Ticket_send_message` with `workspaceId = workspace_id`, `ticketName = active_ticket_name`, and body: `{ "content": "<the plan content just displayed>", "role": "assistant", "message_mode": 1, "data": {} }`. Set `plan_draft` to this content. This call MUST happen in the same response turn — do NOT ask the refine/confirm question until this tool call completes.
+
+**If `DUPLO_AGENT_MODE=true` (remote agent):**
 Send the user's input via `duplo-helpdesk::Ticket_send_message_streaming`:
 ```json
 {
@@ -209,17 +237,18 @@ Send the user's input via `duplo-helpdesk::Ticket_send_message_streaming`:
   }
 }
 ```
-
 Apply agent availability hard rule. From the plain JSON response:
 - Read `text` → display the agent's full text verbatim.
 - Check `present_files` for an entry where `path` ends with `plan.md` → capture its `content` as `plan_draft`.
 
+---
+
 Ask:
 > "Would you like to refine the plan or confirm it? (refine / confirm)"
 
-- **refine** → send follow-up with same `project_context`, display response, re-capture `plan_draft`. Repeat.
+- **refine** → (local mode) ask what to change, rewrite the plan incorporating the feedback, repeat steps 1–5, update `plan_draft`; (remote mode) send follow-up with same `project_context`, display response, re-capture `plan_draft`. Repeat.
 - **confirm** → save:
-  1. Use `plan_draft` (from `present_files`) if captured; otherwise use the `text` value.
+  1. Use `plan_draft` if captured; otherwise use the `text` value (remote) or the plan content you wrote (local).
   2. Call `duplo-helpdesk::Projects_patch` with body `{ "plan": { "content": "<plan_draft>" } }`
   3. Tell the user: "Plan saved."
   4. Proceed to Step 5.
@@ -233,6 +262,13 @@ Fetch updated project: call `duplo-helpdesk::Projects_get` with `id = project_id
 Tell the user:
 > "Generating execution stages from the plan..."
 
+**If `DUPLO_AGENT_MODE=false` or not set (local agent mode):**
+1. **Record user message** (tool call) — call `duplo-helpdesk::Ticket_send_message` with `workspaceId = workspace_id`, `ticketName = active_ticket_name`, and body: `{ "content": "Based on the confirmed plan, generate execution stages and tasks for this project.", "role": "user", "message_mode": 1, "data": {} }`
+2. Load `~/.duplocloud/skills/duplo-project-management/execution-phase.md` if it exists and follow its instructions to generate execution stages and tasks. If absent, use general judgment. Use `spec_content` and `plan_content` as context.
+3. Write the execution tasks to the user now as a JSON code block (display it).
+4. **HARD RULE — Record assistant message immediately after displaying, before asking any question** (tool call) — call `duplo-helpdesk::Ticket_send_message` with `workspaceId = workspace_id`, `ticketName = active_ticket_name`, and body: `{ "content": "<the execution tasks JSON just displayed>", "role": "assistant", "message_mode": 1, "data": {} }`. Set `execution_draft` to this content. This call MUST happen in the same response turn — do NOT ask the refine/confirm question until this tool call completes.
+
+**If `DUPLO_AGENT_MODE=true` (remote agent):**
 Send via `duplo-helpdesk::Ticket_send_message_streaming`:
 ```json
 {
@@ -253,7 +289,6 @@ Send via `duplo-helpdesk::Ticket_send_message_streaming`:
   }
 }
 ```
-
 Apply agent availability hard rule. From the plain JSON response:
 - Read `text` → display the agent's full text verbatim.
 - Check `present_files` for an entry where `path` ends with `execution_tasks.json` → capture its `content` as `execution_draft`.
@@ -263,10 +298,12 @@ If no matching entry found in `present_files`:
 - **y** → re-send the same message. Repeat this step.
 - **n** → stop.
 
+---
+
 Ask the user:
 > "Would you like to refine the execution tasks or confirm them? (refine / confirm)"
 
-- **refine** → send follow-up with same `project_context`, display response, re-capture `execution_draft`. Repeat.
+- **refine** → (local mode) ask what to change, rewrite the execution tasks incorporating the feedback, repeat steps 1–5, update `execution_draft`; (remote mode) send follow-up with same `project_context`, display response, re-capture `execution_draft`. Repeat.
 - **confirm** → save the execution stages:
   1. Re-fetch project: call `duplo-helpdesk::Projects_get` to get `execution.version`.
   2. Parse `execution_draft` JSON — it has a `stages` array. Each stage has `id`, `name`, `description`, `tasks[]` where each task has `id`, `title`, `description`.

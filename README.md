@@ -47,3 +47,26 @@ rm -rf ~/.duplocloud
 ```
 
 Also remove the plugin alias from your `~/.zshrc` / `~/.bashrc` (the line containing `plugin-dir.*duplo`).
+
+## Environment Variables
+
+Copy `.env.example` to `.env` and fill in your values. Run `source .env` before launching Claude.
+
+| Variable | Required | Description |
+|---|---|---|
+| `DUPLO_TOKEN` | ✅ Always | Bearer token for the DuploCloud AI helpdesk API. |
+| `DUPLO_HELPDESK_URL` | ✅ Always | Base URL of the duplo-helpdesk MCP server (e.g. `https://mcp-ai-studio.your-company.duplocloud.net`). |
+| `DUPLO_AGENT_MODE` | Optional | Controls who responds to ticket messages. See below. |
+
+### DUPLO_AGENT_MODE
+
+| Value | Behaviour |
+|---|---|
+| `true` (default) | **Remote agent mode.** The DuploCloud backend AI agent handles all ticket responses via `Ticket_send_message_streaming`. The backend enriches every request with workspace credentials, scopes, personas, and secrets before the agent runs. Use this for production workflows. |
+| `false` or unset | **Local agent mode.** Claude / Cursor itself acts as the agent. Messages are recorded to the ticket via `message_mode=1` (record-only — no backend AI invoked). Claude fetches workspace context (personas, scopes, project spec/plan) at activation and caches it locally with a 5-minute TTL. Credentials come from the developer's own machine (`~/.aws/credentials`, `~/.kube/config`, etc.). Use this when you want the AI coding assistant to drive the conversation directly. |
+
+### Which mode should I use?
+
+- **Most users**: leave `DUPLO_AGENT_MODE=true`. The remote agent has full scope credentials and runs in a managed environment.
+- **Plugin developers / power users**: set `DUPLO_AGENT_MODE=false` to use Claude/Cursor as the agent with your own machine credentials.
+

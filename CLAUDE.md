@@ -83,6 +83,7 @@ source .env   # sets DUPLO_TOKEN and DUPLO_HELPDESK_URL
 
 - `DUPLO_TOKEN` — Bearer token for API auth
 - `DUPLO_HELPDESK_URL` — Helpdesk server base URL (also used as `platform_context.duplo_base_url` when sending messages to the agent)
+- `DUPLO_AGENT_MODE` — `false` or not set = Claude acts as the local agent (default); `true` = DuploCloud backend AI agent handles responses
 
 ## TOON Response Format
 
@@ -142,7 +143,24 @@ Then stop and wait. Do NOT retry unless the user explicitly asks.
 
 When the user sends a message with an active ticket:
 
-1. Read `.duplocloud/state.toon` and `.env` using the Read tool (silent, no Bash needed). Extract `workspace_id`, `active_ticket_name`, `DUPLO_TOKEN`, and `DUPLO_HELPDESK_URL`.
+1. Read `.duplocloud/state.toon` and `.env` using the Read tool (silent, no Bash needed). Extract `workspace_id`, `active_ticket_name`, `DUPLO_TOKEN`, `DUPLO_HELPDESK_URL`, and `DUPLO_AGENT_MODE`.
+
+**If `DUPLO_AGENT_MODE=false` or not set (Claude as local agent — default):**
+
+   a. Record the user's message to the ticket — call `duplo-helpdesk::Ticket_send_message` with `workspaceId = workspace_id`, `ticketName = active_ticket_name`, and body:
+   ```json
+   { "content": "<user message>", "role": "user", "message_mode": 1, "data": {} }
+   ```
+   a2. **Hydrate workspace context** — read `~/.duplocloud/workspace_context.json` and check `fetched_at`. If the file is absent OR `fetched_at` is older than 5 minutes: call `Workspaces_get_personas`, `Workspaces_get_scopes`, `Workspaces_get_skills`, `Workspaces_get_skills_built_in_files`, and optionally `Projects_get` in parallel (see **Local Agent Context** section). Re-write skill files and update the cache as part of the end-of-turn Bash flush. Load the context and any relevant skill files from `~/.duplocloud/skills/` into working memory before composing your response.
+   b. Write your response to the user now (display it). Do NOT call `Ticket_send_message_streaming`.
+   c. **HARD RULE — Record assistant response immediately after displaying, before asking any follow-up question** — call `duplo-helpdesk::Ticket_send_message` with `workspaceId = workspace_id`, `ticketName = active_ticket_name`, and body:
+   ```json
+   { "content": "<the full response text just displayed>", "role": "assistant", "message_mode": 1, "data": {} }
+   ```
+   This tool call MUST complete in the same response turn. Do NOT ask the user a follow-up question until this call completes.
+
+**If `DUPLO_AGENT_MODE=true` (DuploCloud backend agent):**
+
 2. Call `duplo-helpdesk::Ticket_send_message_streaming` with:
    ```json
    {
@@ -261,6 +279,79 @@ This operation is **project-scoped** — it requires an active project (`project
 
 When explicitly requested:
 1. Read and follow `skills/clear_canvas/SKILL.md`.
+
+## Local Agent Context
+
+By default (`DUPLO_AGENT_MODE=false` or not set), Claude acts as the local agent and must have current workspace context. This context is fetched from the DuploCloud backend and cached locally with a 5-minute TTL — ensuring that marketplace users always pick up the latest workspace configuration (new scopes, updated personas, revised project spec/plan) without requiring a manual refresh.
+
+**Cache file**: `~/.duplocloud/workspace_context.json` (gitignored)
+
+**Cache file**: `~/.duplocloud/workspace_context.json` (gitignored)
+**Skills files**: `~/.duplocloud/skills/<name>/` — one directory per skill containing `SKILL.md` and supporting files (gitignored)
+
+**Schema:**
+```json
+{
+  "fetched_at": "<ISO 8601 UTC>",
+  "workspace_id": "<id>",
+  "workspace_name": "<name>",
+  "personas": [{ "id": "<id>", "name": "<name>", "skills": ["<skill1>", "..."] }],
+  "scopes": [{ "name": "<name>", "type": "aws|eks|gcp|azure|github|other" }],
+  "skills": [{ "name": "<name>", "title": "<title>", "path": "~/.duplocloud/skills/<name>/SKILL.md" }],
+  "project": {
+    "id": "<id>",
+    "name": "<name>",
+    "spec": "<markdown content or null>",
+    "plan": "<markdown content or null>",
+    "phase": "spec|plan|execution",
+    "current_stage": "<active stage title or null>"
+  }
+}
+```
+
+Omit the `project` key entirely if no `project_id` is in state.
+Omit the `skills` key if no skills with `skillMd` content were fetched.
+
+### Fetch procedure
+
+Call all five in parallel (one tool-call group):
+- `duplo-helpdesk::Workspaces_get_personas` with `id = workspace_id`
+- `duplo-helpdesk::Workspaces_get_scopes` with `id = workspace_id`
+- `duplo-helpdesk::Workspaces_get_skills` with `id = workspace_id` — workspace-specific skills via personas
+- `duplo-helpdesk::Workspaces_get_skills_built_in_files` (no parameters) — platform built-in skill files (flat list of `{ skillName, path, content }`)
+- `duplo-helpdesk::Projects_get` with `id = project_id` ← only if `project_id` is in state
+
+**Writing skill files:** Merge the two skill responses. For workspace-specific skills (`Workspaces_get_skills`), each skill with non-empty `skillMd` is written to `~/.duplocloud/skills/<name>/SKILL.md`. For built-in platform skills (`Workspaces_get_skills_built_in_files`), each entry's `content` is written to `~/.duplocloud/skills/<skillName>/<path>` — preserving the full directory structure (e.g. `spec-phase.md`, `providers/aws.md`). Create `~/.duplocloud/skills/` directory first. If a workspace-specific skill has the same name as a built-in, write both — workspace-specific wins for `SKILL.md` only.
+
+Write `~/.duplocloud/workspace_context.json` and all skill files in the same Bash call as the end-of-turn state flush — never as standalone Bash calls.
+
+### How to use context when responding
+
+After loading the cached context, apply it when composing every response:
+
+1. **Personas** — adopt the skill focus areas each persona defines. If a "DevOps Engineer" persona is present, prioritise infrastructure, CI/CD, and reliability. If a "Security Reviewer" persona is present, emphasise hardening and compliance. Multiple personas combine.
+
+2. **Scopes** — understand the infrastructure landscape. Use scope names (not IDs) when discussing infra. If AWS + EKS scopes are present, the workspace runs Kubernetes on AWS. Do not reference cloud resources that are not covered by an active scope.
+
+3. **Project spec and plan** — treat these as ground truth for what is being built and how. Never contradict the spec or plan without flagging the deviation explicitly and asking the user to confirm.
+
+4. **Current stage** — if the project is in execution phase, focus responses on the goals of the active stage.
+
+5. **Skills** — skills are written to `~/.duplocloud/skills/<skillName>/` at activation time. When a task maps to a skill domain, load `~/.duplocloud/skills/<skillName>/SKILL.md` and follow its instructions as the **authoritative workflow** for that task. Supporting files in the same directory are loaded on demand as directed by `SKILL.md`. Skills are refreshed at activation; they do not need to be re-fetched during the 5-minute TTL cycle.
+
+   **Skill routing — match the user's task to a skill before responding:**
+
+   Check `~/.duplocloud/workspace_context.json` for the `skills` array. For each skill present, match by domain:
+
+   | Skill name | Load when the user's task involves |
+   |---|---|
+   | `duplo-project-management` | Writing or editing a spec; creating or editing a plan; generating or updating execution tasks; reviewing project phase; any project artifact work |
+   | `duplo-aws-infra` | AWS resource provisioning; VPC/network setup; cluster configuration; AWS service setup; cloud resource baselines |
+   | `duplo-dashboard` | Creating or running a dashboard; configuring providers (Grafana, Kubernetes); dashboard templates or scripts |
+
+   **HARD RULE: When an active project is in context (`project` key present in workspace context), ALWAYS check if `duplo-project-management` skill is available and load it before handling any spec, plan, or execution request.** Do not answer project artifact questions from general knowledge alone — the skill defines the exact workflow, phases, and approval flow that must be followed.
+
+   When multiple skills apply (e.g. AWS infra work within a project), load all relevant `SKILL.md` files and follow both. If instructions conflict, the more specific skill takes precedence over the general one.
 
 ## MCP Tool Logging
 
