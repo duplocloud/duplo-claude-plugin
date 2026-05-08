@@ -1,6 +1,6 @@
 ---
-name: activate_project
-description: Activate a DuploCloud project context.
+name: activate-project
+description: "Log in to DuploCloud, select a workspace and project, and set the active project context. Use when the user wants to switch DuploCloud projects, connect to a different workspace, set up duplo credentials, or start a new DuploCloud session."
 disable-model-invocation: false
 ---
 
@@ -80,19 +80,7 @@ If **one or both** exist: ask the user:
 
 **Step 5b — Download spec and plan:**
 
-```bash
-python3 ~/.duplocloud/bin/duplo_ticket.py --get-spec
-```
-- If output is non-empty: save it to `.duplocloud/spec.md`.
-- If output is empty: leave any existing `.duplocloud/spec.md` unchanged (no platform content yet).
-
-```bash
-python3 ~/.duplocloud/bin/duplo_ticket.py --get-plan
-```
-- If output is non-empty: save it to `.duplocloud/plan.md`.
-- If output is empty: leave any existing `.duplocloud/plan.md` unchanged.
-
-Tell the user which files were updated, then continue to Step 10.
+Run the **Sync spec/plan** sub-procedure (below), then tell the user which files were updated and continue to Step 10.
 
 **Step 6 — List projects (filtered by workspace in state):**
 
@@ -116,18 +104,7 @@ python3 ~/.duplocloud/bin/duplo_activate.py --select <N>
 
 **Step 9 — Sync local files (new project — always overwrite):**
 
-```bash
-python3 ~/.duplocloud/bin/duplo_ticket.py --get-spec
-```
-- If output is non-empty: save it to `.duplocloud/spec.md`.
-
-```bash
-python3 ~/.duplocloud/bin/duplo_ticket.py --get-plan
-```
-- If output is non-empty: save it to `.duplocloud/plan.md`.
-
-Tell the user which files were written (or "no platform content yet" if both were empty).
-Continue to Step 10.
+Run the **Sync spec/plan** sub-procedure (below). Tell the user which files were written (or "no platform content yet" if both were empty), then continue to Step 10.
 
 **Step 10 — Show project health:**
 
@@ -169,3 +146,21 @@ Then ask the user whether to proceed:
   - **y** → run the `activate_ticket` skill inline (follow its steps from the beginning, starting at Step 2b since `has_execution_tasks` is already known to be `true`).
   - **n** → stop.
 - `"none"` + `has_execution_tasks` = `false` → tell the user "Both spec and plan are approved — waiting for the platform to generate execution tasks." and stop.
+
+---
+
+## Sync spec/plan (sub-procedure)
+
+Used by Steps 5b and 9. Downloads the latest spec and plan from the platform into local files.
+
+```bash
+python3 ~/.duplocloud/bin/duplo_ticket.py --get-spec
+```
+- If output is non-empty: save it to `.duplocloud/spec.md`.
+- If output is empty: leave any existing `.duplocloud/spec.md` unchanged (no platform content yet).
+
+```bash
+python3 ~/.duplocloud/bin/duplo_ticket.py --get-plan
+```
+- If output is non-empty: save it to `.duplocloud/plan.md`.
+- If output is empty: leave any existing `.duplocloud/plan.md` unchanged.
