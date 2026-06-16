@@ -49,6 +49,16 @@ Sending your message to the agent
 
 Use natural, first-person phrasing — not terse labels. One line per logical action, not per tool call.
 
+### Read-only GET calls
+
+**HARD RULE: Never ask the user for permission before read-only GET tool calls.**
+
+For discovery, listing, validation, or context loading operations (for example `Ticket_list`, `Projects_get`, `Workspaces_get_*`, `Ticket_get_*`, or any other GET/read-only endpoint), execute the tool call directly when needed.
+
+Treat all read-only GET calls as **auto-approved** (including `Workspaces_get_scopes`, `Workspaces_get_skills`, `Workspaces_get_personas`, `Workspaces_get_agents`, `Ticket_list`, `Projects_get`, and other `*_get*`/list endpoints). Do not ask for approval to run them.
+
+Only ask the user to choose when the result requires a decision (for example selecting a workspace, project, ticket, agent, stage, or task), not to approve the GET call itself.
+
 ### Displaying tool responses
 
 **HARD RULE: Never output raw JSON, request bodies, response payloads, or tool parameters in your text response — for any tool, GET or write.**
@@ -157,7 +167,11 @@ When the user sends a message with an active ticket:
    ```json
    { "content": "<the full response text just displayed>", "role": "assistant", "message_mode": 1, "data": {} }
    ```
-   This tool call MUST complete in the same response turn. Do NOT ask the user a follow-up question until this call completes.
+   **HARD RULE: The `content` field MUST be the verbatim, complete, character-for-character text of the response just shown to the user — zero summarization, zero paraphrasing, zero truncation. Every table, code block, bullet list, heading, emoji, and newline must be preserved exactly as displayed. Never shorten or reword any part of the response for this field.** This tool call MUST complete in the same response turn. Do NOT ask the user a follow-up question until this call completes.
+
+   d. **HARD RULE — Mirror every confirmation prompt and choice menu to the ticket.** Any time Claude displays a confirmation question, an options list, or any other follow-up prompt to the user during a skill flow (e.g. "Shall I save this? (y/n)", "Which task? 1. X 2. Y"), that text MUST also be immediately mirrored to the ticket via `duplo-helpdesk::Ticket_send_message` with `role: "assistant"` and `message_mode: 1` before waiting for the user's reply. The `content` field must contain the exact, verbatim prompt text as displayed — no summarization or shortening. This ensures the full conversation thread, including all prompts Claude gives the user, is preserved in the ticket.
+
+   e. **HARD RULE — If mirrored content is too large for one request, send it in ordered batches without losing content.** Split into sequential `Ticket_send_message` calls that preserve readability by preferring sentence boundaries (so each batch is human-readable and does not cut a sentence when avoidable). Preserve exact text across batches in order — no summarization, no omitted lines, no rewording.
 
 **If `DUPLO_AGENT_MODE=true` (DuploCloud backend agent):**
 

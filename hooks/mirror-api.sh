@@ -9,27 +9,55 @@ TICKET_NAME=$(grep '^active_ticket_name:' "$STATE_FILE" 2>/dev/null | sed 's/^ac
 [ -n "$WORKSPACE_ID" ] && [ -n "$TICKET_NAME" ] || exit 0
 
 source .env 2>/dev/null
+MIRROR_MAX_CHARS=${MIRROR_MAX_CHARS:-12000}
+QUEUE_FILE=".duplocloud/.mirror_sendmessage_queue.jsonl"
+QUEUE_HELPER="$(cd "$(dirname "$0")" && pwd)/mirror_queue.py"
+mkdir -p .duplocloud
+
+enqueue_and_flush() {
+    local role="$1"
+    local text="$2"
+    local source="$3"
+    [ -n "$text" ] || return 0
+
+    printf '%s' "$text" | python3 "$QUEUE_HELPER" enqueue "$QUEUE_FILE" "$role" "$source" >/dev/null 2>&1
+    python3 "$QUEUE_HELPER" flush "$QUEUE_FILE" "$WORKSPACE_ID" "$TICKET_NAME" "$DUPLO_TOKEN" "$MIRROR_MAX_CHARS" >/dev/null 2>&1
+}
 
 INPUT=$(cat)
 
-# Mirror user message from request content
-USER_MSG=$(echo "$INPUT" | python3 -c "
+# Mirror request content exactly as sent (preserve role)
+REQ_PARSED=$(echo "$INPUT" | python3 -c "
 import json, sys
 d = json.load(sys.stdin)
-inp = d.get('tool_input', {})
-print(inp.get('content', ''))
+inp = d.get('tool_input', {}) if isinstance(d, dict) else {}
+content = inp.get('content', '') if isinstance(inp, dict) else ''
+role = inp.get('role', '') if isinstance(inp, dict) else ''
+mode = inp.get('message_mode', '') if isinstance(inp, dict) else ''
+if not role:
+    role = 'user'
+print(str(role))
+print(str(mode))
+print(str(content))
 " 2>/dev/null)
 
-if [ -n "$USER_MSG" ]; then
-    BODY=$(python3 -c "
-import json, sys
-print(json.dumps({'content': sys.argv[1], 'role': 'user', 'message_mode': 1, 'data': {}}))
-" "$USER_MSG" 2>/dev/null)
-    [ -n "$BODY" ] && curl -s -X POST \
-        "http://localhost:60021/v1/aiservicedesk/tickets/$WORKSPACE_ID/$TICKET_NAME/sendMessage" \
-        -H "Authorization: Bearer $DUPLO_TOKEN" \
-        -H "Content-Type: application/json" \
-        -d "$BODY" > /dev/null 2>&1
+REQ_ROLE=$(printf '%s' "$REQ_PARSED" | sed -n '1p')
+REQ_MODE=$(printf '%s' "$REQ_PARSED" | sed -n '2p')
+REQ_CONTENT=$(printf '%s' "$REQ_PARSED" | sed '1,2d')
+
+if [ -n "$REQ_CONTENT" ]; then
+    case "$REQ_ROLE" in
+        user|assistant)
+            ;;
+        *)
+            REQ_ROLE="user"
+            ;;
+    esac
+
+    # Mirror only record-only messages (mode=1) or messages where mode is absent.
+    if [ -z "$REQ_MODE" ] || [ "$REQ_MODE" = "1" ]; then
+        enqueue_and_flush "$REQ_ROLE" "$REQ_CONTENT" "api:request"
+    fi
 fi
 
 # Mirror agent response from tool result
@@ -51,15 +79,7 @@ elif isinstance(resp, str):
 " 2>/dev/null)
 
 if [ -n "$AGENT_REPLY" ]; then
-    BODY=$(python3 -c "
-import json, sys
-print(json.dumps({'content': sys.argv[1], 'role': 'assistant', 'message_mode': 1, 'data': {}}))
-" "$AGENT_REPLY" 2>/dev/null)
-    [ -n "$BODY" ] && curl -s -X POST \
-        "http://localhost:60021/v1/aiservicedesk/tickets/$WORKSPACE_ID/$TICKET_NAME/sendMessage" \
-        -H "Authorization: Bearer $DUPLO_TOKEN" \
-        -H "Content-Type: application/json" \
-        -d "$BODY" > /dev/null 2>&1
+    enqueue_and_flush "assistant" "$AGENT_REPLY" "api:response"
 fi
 
 exit 0

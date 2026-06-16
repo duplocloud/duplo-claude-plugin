@@ -119,7 +119,12 @@ This returns all AI Planner tickets linked to this project. Filter for tickets w
 
   Omit `aiAgentId` entirely if `selected_agent_id` is null. Omit `ticketContextForAgent` entirely if both `scope_ids` and `persona_ids` are empty.
 
-  Call the MCP tool and capture the returned ticket's `name` as `active_ticket_name`. Call `duplo-helpdesk::Ticket_put_status` with `workspaceId = workspace_id`, `ticketName = active_ticket_name`, and body `{ "status": "inProgress" }`. Save state.
+  Call the MCP tool and capture the returned ticket's `name` as `active_ticket_name`.
+
+  Tell the user:
+  > "Created AI Planner ticket **\<active_ticket_name\>** for project **\<project_name\>**."
+
+  Call `duplo-helpdesk::Ticket_put_status` with `workspaceId = workspace_id`, `ticketName = active_ticket_name`, and body `{ "status": "inProgress" }`. Save state.
 
 ---
 
@@ -192,6 +197,8 @@ Apply agent availability hard rule. From the plain JSON response:
 
 ---
 
+**Mirror confirmation prompt to ticket** — call `duplo-helpdesk::Ticket_send_message` with `workspaceId = workspace_id`, `ticketName = active_ticket_name`, and body: `{ "content": "Would you like to refine the spec or confirm it? (refine / confirm)", "role": "assistant", "message_mode": 1, "data": {} }`. Do NOT wait for this to complete — fire and move on.
+
 Ask:
 > "Would you like to refine the spec or confirm it? (refine / confirm)"
 
@@ -242,6 +249,8 @@ Apply agent availability hard rule. From the plain JSON response:
 - Check `present_files` for an entry where `path` ends with `plan.md` → capture its `content` as `plan_draft`.
 
 ---
+
+**Mirror confirmation prompt to ticket** — call `duplo-helpdesk::Ticket_send_message` with `workspaceId = workspace_id`, `ticketName = active_ticket_name`, and body: `{ "content": "Would you like to refine the plan or confirm it? (refine / confirm)", "role": "assistant", "message_mode": 1, "data": {} }`. Do NOT wait for this to complete — fire and move on.
 
 Ask:
 > "Would you like to refine the plan or confirm it? (refine / confirm)"
@@ -298,6 +307,8 @@ If no matching entry found in `present_files`:
 - **y** → re-send the same message. Repeat this step.
 - **n** → stop.
 
+**Mirror confirmation prompt to ticket** — call `duplo-helpdesk::Ticket_send_message` with `workspaceId = workspace_id`, `ticketName = active_ticket_name`, and body: `{ "content": "Would you like to refine the execution tasks or confirm them? (refine / confirm)", "role": "assistant", "message_mode": 1, "data": {} }`. Do NOT wait for this to complete — fire and move on.
+
 ---
 
 Ask the user:
@@ -352,8 +363,15 @@ Ask:
 
 ## Step 7 — List tasks in stage
 
-For each task in `active_stage.tasks`, check for an existing ticket:
-Call `duplo-helpdesk::Ticket_get_project_task` with `workspaceId`, `projectId = project_id`, `projectType = "plan_execution"`, `taskId = <task.name>`.
+Call `duplo-helpdesk::Ticket_list` with `workspaceId = workspace_id`.
+
+Build `task_ticket_map` keyed by `metadata.taskId` using only tickets where all of the following are true:
+- `originContext.type` is `Project`
+- `originContext.id` equals `project_id`
+- `originContext.metadata.projectType` equals `plan_execution`
+- `originContext.metadata.taskId` is present
+
+For each task in `active_stage.tasks`, look up an existing ticket in `task_ticket_map` using `task.name`.
 
 Display:
 ```

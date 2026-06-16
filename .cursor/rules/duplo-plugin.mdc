@@ -54,6 +54,14 @@ After every tool call, output only a plain-language result:
 - "Ticket created successfully."
 - "Project **projectWeb** is active."
 
+### Read-only GET calls
+
+**HARD RULE: Never ask the user for permission before read-only GET tool calls.**
+
+Treat all read-only GET calls as **auto-approved** (including `Workspaces_get_scopes`, `Workspaces_get_skills`, `Workspaces_get_personas`, `Workspaces_get_agents`, `Ticket_list`, `Projects_get`, and other `*_get*`/list endpoints).
+
+Run these calls directly when needed for discovery, listing, validation, or context loading. Only ask the user to choose when results require a decision (workspace/project/ticket/agent/stage/task selection), not to approve the GET call itself.
+
 ### Auto-selection
 
 When logic auto-selects an item (single result, or matches saved state), always tell the user explicitly:

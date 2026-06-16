@@ -77,6 +77,19 @@ Extract and store:
 - `execution.stages` → `stages`
 - `execution.version` → `execution_version`
 
+Call `duplo-helpdesk::Ticket_list` with `workspaceId = workspace_id`.
+
+From the returned tickets, build `task_ticket_map` keyed by `metadata.taskId` using only tickets where all of the following are true:
+- `originContext.type` is `Project`
+- `originContext.id` equals `project_id`
+- `originContext.metadata.projectType` equals `plan_execution`
+- `originContext.metadata.taskId` is present
+
+For each mapped ticket, capture:
+- `ticket_name`
+- `ticket_title`
+- `ticket_status`
+
 If `stages` is empty or absent, tell the user:
 > "No execution stages found for 🟢 **\<project_name\>**. Please generate execution stages first using `/duplo:ai_planner`."
 Then stop.
@@ -210,11 +223,7 @@ Tell the user: "Task **\<title\>** added." Go back to Step 2.
 
 ## Step 5 — Manage a task
 
-For each task in `active_stage.tasks`, check for an existing linked ticket by calling `duplo-helpdesk::Ticket_get_project_task` with:
-- `workspaceId = workspace_id`
-- `projectId = project_id`
-- `projectType = "plan_execution"`
-- `taskId = <task.name>`
+For each task in `active_stage.tasks`, look up an existing linked ticket in `task_ticket_map` using `task.name`.
 
 Display:
 ```
@@ -228,6 +237,8 @@ Ask: "Which task? (number, or 'back')"
 
 - **back** → go to Step 2.
 - **number** → capture selected task as `active_task` (with `name`, `title`, `description`, `version`) and `task_ticket_name` / `task_ticket_status` if a ticket was found. Proceed to Step 5a.
+
+Whenever the project is re-fetched later in this flow, also refresh `task_ticket_map` from `Ticket_list` before showing task menus again.
 
 ---
 

@@ -29,49 +29,74 @@ with open(transcript_path) as f:
         except Exception:
             continue
 
-# Check if the last assistant message used Ticket_send_message_streaming or Ticket_send_message.
-# If so, those conversations are already in the ticket — do not mirror again.
+last_assistant = None
 for msg in reversed(messages):
     if msg.get('role') == 'assistant':
-        content = msg.get('content', [])
-        if isinstance(content, list):
-            for block in content:
-                if block.get('type') == 'tool_use':
-                    tool = block.get('name', '')
-                    if 'Ticket_send_message' in tool:
-                        sys.exit(1)  # skip — already in ticket
+        last_assistant = msg
         break
 
-# Find last assistant message text
-for msg in reversed(messages):
-    if msg.get('role') == 'assistant':
-        content = msg.get('content', '')
-        if isinstance(content, list):
-            text = ''.join(c.get('text', '') for c in content if isinstance(c, dict) and c.get('type') == 'text')
-        else:
-            text = str(content)
-        if text.strip():
-            print(text)
-        break
+if not last_assistant:
+    sys.exit(0)
+
+content = last_assistant.get('content', '')
+
+if isinstance(content, list):
+    displayed_text = ''.join(
+        c.get('text', '') for c in content
+        if isinstance(c, dict) and c.get('type') == 'text'
+    )
+else:
+    displayed_text = str(content)
+
+if not displayed_text.strip():
+    sys.exit(0)
+
+mirrored_assistant_contents = []
+used_streaming_send = False
+
+if isinstance(content, list):
+    for block in content:
+        if not isinstance(block, dict) or block.get('type') != 'tool_use':
+            continue
+
+        tool_name = str(block.get('name', ''))
+        tool_input = block.get('input', {})
+
+        if 'Ticket_send_message_streaming' in tool_name:
+            used_streaming_send = True
+
+        if 'Ticket_send_message' in tool_name and isinstance(tool_input, dict):
+            if str(tool_input.get('role', '')) == 'assistant' and str(tool_input.get('message_mode', '')) == '1':
+                mirrored_assistant_contents.append(str(tool_input.get('content', '')))
+
+# Streaming already mirrors conversation in-ticket; avoid duplicates.
+if used_streaming_send:
+    sys.exit(1)
+
+# Skip only when the exact displayed assistant text was already mirrored.
+if displayed_text in mirrored_assistant_contents:
+    sys.exit(1)
+
+print(displayed_text)
 " "$TRANSCRIPT_PATH" 2>/dev/null)
 [ -n "$RESULT" ] || exit 0
 
 source .env 2>/dev/null
+MIRROR_MAX_CHARS=${MIRROR_MAX_CHARS:-12000}
+QUEUE_FILE=".duplocloud/.mirror_sendmessage_queue.jsonl"
+QUEUE_HELPER="$(cd "$(dirname "$0")" && pwd)/mirror_queue.py"
+mkdir -p .duplocloud
 
-BODY=$(python3 -c "
-import json, sys
-print(json.dumps({
-    'content': sys.argv[1],
-    'role': 'assistant',
-    'message_mode': 1,
-    'data': {}
-}))
-" "$RESULT" 2>/dev/null)
-[ -n "$BODY" ] || exit 0
+enqueue_and_flush() {
+    local role="$1"
+    local text="$2"
+    local source="$3"
+    [ -n "$text" ] || return 0
 
-curl -s -X POST "http://localhost:60021/v1/aiservicedesk/tickets/$WORKSPACE_ID/$TICKET_NAME/sendMessage" \
-  -H "Authorization: Bearer $DUPLO_TOKEN" \
-  -H "Content-Type: application/json" \
-  -d "$BODY" > /dev/null 2>&1
+    printf '%s' "$text" | python3 "$QUEUE_HELPER" enqueue "$QUEUE_FILE" "$role" "$source" >/dev/null 2>&1
+    python3 "$QUEUE_HELPER" flush "$QUEUE_FILE" "$WORKSPACE_ID" "$TICKET_NAME" "$DUPLO_TOKEN" "$MIRROR_MAX_CHARS" >/dev/null 2>&1
+}
+
+enqueue_and_flush "assistant" "$RESULT" "stop:assistant"
 
 exit 0

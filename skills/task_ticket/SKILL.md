@@ -46,6 +46,19 @@ Call `duplo-helpdesk::Projects_get` with `id = project_id`.
 
 Extract `execution.stages` → `stages`.
 
+Call `duplo-helpdesk::Ticket_list` with `workspaceId = workspace_id`.
+
+From the returned tickets, build `task_ticket_map` keyed by `metadata.taskId` using only tickets where all of the following are true:
+- `originContext.type` is `Project`
+- `originContext.id` equals `project_id`
+- `originContext.metadata.projectType` equals `plan_execution`
+- `originContext.metadata.taskId` is present
+
+For each mapped ticket, capture:
+- `ticket_name`
+- `ticket_title`
+- `ticket_status`
+
 If `stages` is empty or absent, tell the user:
 > "No execution stages found for 🟢 **\<project_name\>**. Please generate execution stages first using `/duplo:ai_planner`."
 Then stop.
@@ -72,13 +85,7 @@ Capture selected stage as `active_stage`.
 
 ## Step 3 — Select a task
 
-For each task in `active_stage`, check for an existing linked ticket:
-
-Call `duplo-helpdesk::Ticket_get_project_task` with:
-- `workspaceId = workspace_id`
-- `projectId = project_id`
-- `projectType = "plan_execution"`
-- `taskId = <task.name>`
+For each task in `active_stage`, look up an existing linked ticket in `task_ticket_map` using `task.name`.
 
 Display with ticket status if found:
 ```
