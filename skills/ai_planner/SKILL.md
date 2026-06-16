@@ -391,10 +391,16 @@ N+1. Add a new task
 Ask:
 > "For **\<active_task.title\>**:
 > 1. Open a ticket for this task
-> 2. Go back to stage list"
+> 2. Edit task name / description
+> 3. Move task to a different stage
+> 4. Delete task
+> 5. Go back to stage list"
 
 - **1** → follow `skills/activate_ticket/SKILL.md` from Step 4d using `task_id = active_task.name`, `task_title = active_task.title`, `project_ticket_type = "plan_execution"`. Ticket is linked to the task, mirroring applies.
-- **2** → go back to Step 6.
+- **2** → delegate to `skills/stage_tasks/SKILL.md` Step 5d (Edit task name / description). Pass `workspace_id`, `project_id`, `active_stage`, and `active_task`. Skip Steps 0–5c. After completion, re-fetch project and return to Step 7.
+- **3** → delegate to `skills/stage_tasks/SKILL.md` Step 5c (Move task to a different stage). Pass `workspace_id`, `project_id`, `active_stage`, and `active_task`. Skip Steps 0–5b. After completion, re-fetch project and return to Step 7.
+- **4** → delegate to `skills/stage_tasks/SKILL.md` Step 5e (Delete task). Pass `workspace_id`, `project_id`, `active_stage`, and `active_task`. Skip Steps 0–5d. After completion, re-fetch project and return to Step 7.
+- **5** → go back to Step 6.
 
 ---
 
