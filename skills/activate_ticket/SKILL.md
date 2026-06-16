@@ -1,196 +1,379 @@
 ---
 name: activate_ticket
-description: Activate the next work item (ticket) for the currently active DuploCloud project.
+description: Open or resume a helpdesk ticket. Tickets are independent of projects.
 disable-model-invocation: false
+---
+
+## Color Coding — HARD RULE
+
+**Always prefix active workspace, project, or ticket names with a 🟢 emoji.** This applies everywhere an active/selected name is displayed — auto-select messages, confirmation prompts, resume prompts, and list items.
+
+Example:
+> You were last working on 🟢 **Fix login bug**. Would you like to pick up where you left off?
+
+In lists, only the currently active item gets the 🟢 prefix.
+
 ---
 
 Follow these steps in order:
 
-**Step 1 — Check project state:**
+---
 
-```bash
-python3 ~/.duplocloud/bin/duplo_ticket.py --check-project
+## Step 1 — Resolve workspace
+
+Read `.duplocloud/state.toon` (file may not exist). Note `workspace_id`, `active_ticket_name`, `project_id`, `project_name` if present.
+
+Call `duplo-helpdesk::Workspaces_get_available` to get the list of available workspaces.
+
+- If the call returns an empty list, tell the user:
+  > "It looks like you don't have any workspaces set up yet. Please create one in the DuploCloud portal first."
+  Then stop.
+
+- If only **one** workspace is returned: auto-select it and tell the user:
+  > "Auto-selecting 🟢 **\<workspace name\>** — it's the only workspace available."
+  Capture its `id` as `workspace_id`.
+
+- If **multiple** workspaces and `workspace_id` is present in state:
+  - Check whether that `workspace_id` exists in the returned list.
+  - If **found**: ask the user:
+    > "You're currently connected to 🟢 **\<workspace name\>**. Would you like to continue with this workspace? (y/n)"
+    - **y** → use this workspace. Proceed to Step 1b.
+    - **n** → show the workspace list (Step 1a).
+  - If **not found**: tell the user the previously saved workspace is no longer available, then show the workspace list (Step 1a).
+
+- If `workspace_id` is absent from state: show the workspace list (Step 1a).
+
+### Step 1a — Choose a workspace
+
+Show a numbered list using only the workspace **name** (no raw IDs). If a workspace matches the `workspace_id` currently in state, prefix it with 🟢:
 ```
-
-- If exit code is **3**: ask the user:
-  > "No active project found. Would you like to activate one now? (y/n)"
-  - **y** → run the `activate_project` skill inline (follow its steps from the beginning), then re-run `--check-project` and continue.
-  - **n** → stop.
-- Capture from JSON output: `project_name`, `has_execution_tasks`, `spec_empty`, `plan_empty`.
-
-**Step 2 — Route based on execution tasks:**
-
-*If `has_execution_tasks` is `false`:*
-
-Proceed directly to Step 3 with type `spec_creation`. Do not ask the user — they have already chosen to activate a ticket.
-
-*If `has_execution_tasks` is `true`:*
-
-Ask the user:
-> Execution tasks are ready for project `<project_name>`. Would you like to work on an execution task?
-> 1. Yes — pick an execution task to work on
-> 2. No — resume planning work (spec/plan)
-
-Wait for user selection:
-- If user picks **2**: proceed to Step 3 with type `spec_creation`.
-- If user picks **1**: proceed to Step 2b.
-
-**Step 2b — Select an execution task:**
-
-```bash
-python3 ~/.duplocloud/bin/duplo_ticket.py --list-execution-tasks
-```
-
-Parse the JSON output. Extract `total` and `stages`.
-
-If `total` is 0: tell the user "No execution tasks found for this project." and stop.
-
-**If `total` > 10** — first ask the user to select a stage:
-
-Show the numbered stage list:
-```
-Which stage would you like to work on?
-1. <stage_name> (<N> tasks) — <stage_description>
-2. <stage_name> (<N> tasks) — <stage_description>
+Here are your available workspaces:
+1. 🟢 <name>   ← currently active
+2. <name>
 ...
 ```
+Ask: "Which workspace would you like to use?"
 
-Wait for the user's stage selection. Then show the tasks in that stage, including ticket info where available:
+Capture the selected workspace's `id` as `workspace_id` (store internally, do not show to the user).
 
+If the newly selected workspace **differs** from what was in state: **clear `active_ticket_name`** (the old ticket belongs to the old workspace).
+
+### Step 1b — Sync tickets to state
+
+After workspace is resolved (whether auto-selected or chosen via Step 1a):
+
+**If `DUPLO_AGENT_MODE=false` or not set (local agent mode)**: call these in parallel (one tool-call group):
+- `duplo-helpdesk::Ticket_list` with `workspaceId = workspace_id`
+- `duplo-helpdesk::Workspaces_get_personas` with `id = workspace_id`
+- `duplo-helpdesk::Workspaces_get_scopes` with `id = workspace_id`
+- `duplo-helpdesk::Workspaces_get_skills` with `id = workspace_id` — workspace-specific skills via personas
+- `duplo-helpdesk::Workspaces_get_skills_built_in_files` (no parameters) — platform built-in skill files
+- `duplo-helpdesk::Projects_get` with `id = project_id` ← only if `project_id` is in state
+
+Write all of the following in the single end-of-step Bash flush:
+- `.duplocloud/state.toon` — with `tickets` array
+- `~/.duplocloud/workspace_context.json` — using the personas, scopes, skills, and project data; set `fetched_at` to now (ISO 8601 UTC). See **Local Agent Context** section in `CLAUDE.md` for schema.
+- `~/.duplocloud/skills/<skillName>/<path>` — for each entry from `Workspaces_get_skills_built_in_files` write `content` to the corresponding path. For each workspace skill with non-empty `skillMd` write to `~/.duplocloud/skills/<name>/SKILL.md`. Create `~/.duplocloud/skills/` directory first.
+
+**If `DUPLO_AGENT_MODE=true` (remote agent)**: call only `duplo-helpdesk::Ticket_list` with `workspaceId = workspace_id`.
+
+Store the results in `.duplocloud/state.toon` under a `tickets` field:
+```
+tickets[N]{name,title,status,aiAgentId}:
+  <ticketName>,<title>,<status>,<aiAgentId or null>
+  ...
+```
+
+Write the updated state silently. Step 3 will use this cached list.
+
+---
+
+## Step 2 — Resume or open a ticket?
+
+If `active_ticket_name` is present in state (and workspace has not changed), look up the ticket title from the cached `tickets` list. Ask the user:
+> "You were last working on 🟢 **\<title\>**. Would you like to pick up where you left off? (y/n)"
+- **y** → go to Step 6 (load past context).
+- **n** → continue to Step 3.
+
+If absent: continue to Step 3.
+
+---
+
+## Step 3 — Choose an existing ticket or create a new one
+
+Use the cached `tickets` array from state. Filter to `open` or `inProgress` status only.
+
+Display using the ticket **title** as the primary label. Map status values to friendly labels: `open` → "Open", `inProgress` → "In Progress". Do not show raw ticket name IDs.
+
+If a ticket matches the `active_ticket_name` currently in state, prefix it with 🟢:
+```
+Here are your open tickets:
+1. 🟢 <title> — In Progress   ← currently active
+2. <title> — Open
+...
+N+1. Start a new ticket
+```
+
+If there are no open tickets, skip the list and go directly to Step 4.
+
+Ask: "Which would you like to work on?"
+
+- Existing ticket selected → capture its `name` as `active_ticket_name`, go to Step 5.
+- "Start a new ticket" → continue to Step 4.
+
+---
+
+## Step 4 — Create a new ticket
+
+### Step 4a — Check for execution tasks (only if project is active)
+
+If `project_id` is present in state:
+
+Call `duplo-helpdesk::Projects_get` with `id = project_id`.
+
+From the response extract:
+- `has_execution_tasks` = true if any stage in `execution.stages` has tasks
+
+If `has_execution_tasks` is true, ask the user:
+> "Your project **\<project_name\>** has tasks ready to execute. What would you like to do?
+> 1. Work on a project task
+> 2. Open a standalone ticket"
+
+- User picks **1** → go to Step 4b.
+- User picks **2** → go to Step 4c.
+
+If `has_execution_tasks` is false, or `project_id` is absent: go to Step 4c.
+
+---
+
+### Step 4b — Pick a project task
+
+Using the stages data from the project response, count total tasks across all stages.
+
+**If total tasks > 10** — first ask user to select a stage (show name and task count, no IDs):
+```
+Which area would you like to work on?
+1. <stage_name> — <stage_description> (<N> tasks)
+2. ...
+```
+Then show tasks within the chosen stage:
 ```
 Which task would you like to work on?
-1. <task_title> — <ticket_status> (<ticket_name>)
-2. <task_title> — no ticket
-...
+1. <task_title> — <friendly ticket status or "No ticket yet">
+2. ...
 ```
 
-**If `total` <= 10** — show all tasks flat across all stages with stage context and ticket info:
-
+**If total tasks ≤ 10** — show all tasks flat:
 ```
 Which task would you like to work on?
-1. [<stage_name>] <task_title> — <ticket_status> (<ticket_name>)
-2. [<stage_name>] <task_title> — no ticket
-...
+1. <task_title> (<stage_name>) — <friendly ticket status or "No ticket yet">
+2. ...
 ```
 
-For each task: if `ticket_name` is present in the JSON, show `<ticket_status> (<ticket_name>)`; otherwise show `no ticket`.
+Wait for task selection. Capture `task_id` (the task's `name` UUID, stored internally) and `task_title`.
 
-Wait for the user's task selection (number N). Resolve it to the definitive task name, title, and ticket info directly from the `--list-execution-tasks` JSON already in memory:
+**If the task already has a ticket** (`ticket_name` present in the task data):
+- Set `active_ticket_name` to that ticket name.
+- Go to Step 5.
 
-- **If stage was selected** (total > 10 flow): index into `stages[S-1].tasks[N-1]`
-- **If flat list** (total <= 10 flow): flatten all `stages[*].tasks` into a single list and take item `[N-1]`
+**If no ticket yet**: continue to Step 4d (select agent), then Step 4e.
 
-Capture `name` (UUID) as `task_id` and `title` as `task_title`. Use only these values going forward. Do not guess or recall UUIDs from earlier output.
+---
 
-Also capture `ticket_name` and `ticket_id` if present in the task object — these mean a ticket already exists for this task.
+### Step 4c — Name the new ticket
 
-**Step 2c — Check or create ticket for selected task:**
+Ask the user: "What should we call this ticket?"
 
-- If `ticket_name` is present and non-empty in the `--get-task-by-index` output: the ticket already exists. Run:
-  ```bash
-  python3 ~/.duplocloud/bin/duplo_ticket.py --check-task-ticket --task-id <task_id>
+---
+
+### Step 4d — Pick an agent
+
+Call `duplo-helpdesk::Workspaces_get_agents` with `id = workspace_id` (always fetch — needed in both modes).
+
+**If `DUPLO_AGENT_MODE=false` or not set (local agent mode):** auto-select silently — do NOT prompt the user:
+- If an agent whose name contains "generic" (case-insensitive) exists → use its `id`. Tell the user: "Auto-selecting agent 🟢 **\<name\>**."
+- Else if any agents are returned → use the first agent's `id`. Tell the user: "Auto-selecting agent 🟢 **\<name\>**."
+- Else (no agents) → `selected_agent_id = null`.
+
+**If `DUPLO_AGENT_MODE=true`:** Show a numbered list using agent **name** only (no IDs or endpoints):
+```
+Which agent should handle this ticket?
+1. <name>
+2. ...
+```
+
+---
+
+### Step 4d.5 — Select personas
+
+Call `duplo-helpdesk::Workspaces_get_personas` with `id = workspace_id` (always fetch fresh from backend).
+
+- **Call fails or returns empty list** → set `selected_persona_ids = []` and proceed to Step 4e.
+- **Exactly one persona returned** → auto-select it, tell the user:
+  > "Auto-selecting persona 🟢 **\<name\>** — it's the only one available."
+  Set `selected_persona_ids = [<that persona's id>]`. Proceed to Step 4e.
+- **Multiple personas** → show a numbered multi-select list using persona **name** only (no IDs):
   ```
-  Then run Step 2d (inProgress), then Step 2e (load context), tell the user "Resuming existing ticket for task '<task_title>'. Here's what we've done so far: [brief summary from context]" and stop.
-
-- If `ticket_name` is absent or empty: no ticket yet. Continue below.
-
-List available agents:
-
-```bash
-python3 ~/.duplocloud/bin/duplo_ticket.py --list-agents
-```
-
-Show the numbered agent list to the user and ask:
-> Which agent should handle this task? (enter the number)
-
-Wait for the user's selection. Look up the corresponding agent ID (`id:` value in parentheses). Then create the ticket:
-
-```bash
-python3 ~/.duplocloud/bin/duplo_ticket.py --create-execution-task-ticket \
-  --task-id <task_id> \
-  --agent-id <selected_agent_id>
-```
-
-- If exit code is **0**: run Step 2d (inProgress), then Step 2e (load context), tell the user "Ticket created for task '<task_title>'. Let's get to work!" and stop.
-- If exit code is **1**: show the error output to the user and stop.
-
-**Step 2d — Move ticket to inProgress:**
-
-```bash
-python3 ~/.duplocloud/bin/duplo_ticket.py --get-ticket-status
-```
-
-- If the output is `open`: run:
-  ```bash
-  python3 ~/.duplocloud/bin/duplo_ticket.py --set-ticket-status --status inProgress
+  Which personas should have access to this ticket? (enter comma-separated numbers, or press Enter to skip)
+  1. <name>
+  2. <name>
+  ...
   ```
-- If the output is already `inProgress` or any other status: skip.
+  Wait for input:
+  - User enters numbers (e.g. `1,3`) → capture the IDs of the selected personas as `selected_persona_ids`.
+  - User presses Enter / skips → `selected_persona_ids = []`.
 
-**Step 2e — Load past context:**
+---
 
-```bash
-python3 ~/.duplocloud/bin/duplo_ticket.py --get-ticket-context
+### Step 4e — Create the ticket
+
+**Standalone ticket** — call `duplo-helpdesk::Ticket_create` with `workspaceId = workspace_id` and body:
+```json
+{
+  "title": "<user-provided title>",
+  "aiAgentId": "<selected_agent_id — omit this field if null>",
+  "workspaceId": "<workspace_id>",
+  "origin": "api",
+  "ticketContextForAgent": {
+    "personaIds": ["<selected_persona_ids>"]
+  }
+}
 ```
 
-Read the full output carefully. It contains the mirrored conversation history from previous sessions on this ticket — prior user messages, Claude responses, decisions made, and work done. Use this to restore your understanding of where the work left off before responding to the user. If the output says "No past messages found", proceed without prior context.
+Omit `aiAgentId` entirely if `selected_agent_id` is null. Omit `ticketContextForAgent` entirely if `selected_persona_ids` is empty.
 
-**Step 3 — Activate or create spec ticket:**
-
-```bash
-python3 ~/.duplocloud/bin/duplo_ticket.py --activate-ticket --type spec_creation
+**Spec or plan creation ticket** (when `project_ticket_type` is set) — call `duplo-helpdesk::Ticket_create` with `workspaceId = workspace_id` and body:
+```json
+{
+  "title": "<project_name> — <spec_creation or plan_creation>",
+  "aiAgentId": "<selected_agent_id — omit this field if null>",
+  "workspaceId": "<workspace_id>",
+  "origin": "api",
+  "ticketContextForAgent": {
+    "personaIds": ["<selected_persona_ids>"]
+  },
+  "originContext": {
+    "type": "Project",
+    "id": "<project_id>",
+    "subType": "<project_ticket_type>"
+  }
+}
 ```
 
-- If exit code is **0** (ticket found and activated): run Step 2d (inProgress), then Step 2e (load context), then continue to Step 5.
-- If exit code is **1** (not found): continue to Step 4.
+Omit `aiAgentId` entirely if `selected_agent_id` is null. Omit `ticketContextForAgent` entirely if `selected_persona_ids` is empty.
 
-**Step 4 — Create spec ticket:**
+**Execution task ticket** — call `duplo-helpdesk::Ticket_create` with `workspaceId = workspace_id` and body:
 
-```bash
-python3 ~/.duplocloud/bin/duplo_ticket.py --list-agents
+**HARD RULE: `taskId` MUST be inside `originContext.metadata`. Never place `taskId` as a top-level field. The ticket will NOT be linked to the task if the structure is wrong.**
+```json
+{
+  "title": "<task_title>",
+  "aiAgentId": "<selected_agent_id — omit this field if null>",
+  "workspaceId": "<workspace_id>",
+  "origin": "api",
+  "ticketContextForAgent": {
+    "personaIds": ["<selected_persona_ids>"]
+  },
+  "originContext": {
+    "type": "Project",
+    "id": "<project_id>",
+    "subType": "execution",
+    "metadata": {
+      "taskId": "<task_id>",
+      "projectType": "plan_execution"
+    }
+  }
+}
 ```
 
-Show the numbered agent list to the user. Write out each numbered item clearly so the user can read the full list. Then ask:
-> Which agent should handle this ticket? (enter the number)
+Omit `aiAgentId` entirely if `selected_agent_id` is null. Omit `ticketContextForAgent` entirely if `selected_persona_ids` is empty.
 
-Wait for the user's selection. Look up the corresponding agent ID from the list output (the `id:` value in parentheses on the selected line). Then create the ticket:
+Capture the returned ticket's `name` as `active_ticket_name` (stored internally).
 
-```bash
-python3 ~/.duplocloud/bin/duplo_ticket.py --create-ticket \
-  --type spec_creation \
-  --agent-id <selected_agent_id>
+---
+
+## Step 5 — Load past context
+
+Call `duplo-helpdesk::Ticket_get_messages` with `workspaceId = workspace_id`, `ticketName = active_ticket_name`.
+
+- If messages are returned: read them carefully. They contain the full conversation history — prior user messages, assistant responses, decisions made, and work done. Use this to restore your understanding of where work left off before responding to the user.
+- If no messages or empty: proceed without prior context.
+
+---
+
+## Step 6 — Save state
+
+Write `.duplocloud/state.toon` silently, preserving any existing `project_id` and `project_name` fields:
+```
+workspace_id: <workspace_id>
+project_id: <project_id if present, else omit>
+project_name: <project_name if present, else omit>
+active_ticket_name: <active_ticket_name>
+tickets[N]{name,title,status,aiAgentId}:
+  <row per ticket>
 ```
 
-- If exit code is **0**: run Step 2d (inProgress), then Step 2e (load context), show the ticket creation output to the user, then continue to Step 5.
-- If exit code is **1**: show the error output to the user and stop.
+---
 
-**Step 5 — Prompt based on spec/plan content state:**
+## Step 6b — Ticket lifecycle rules
 
-Using `spec_empty` and `plan_empty` captured in Step 1:
+**HARD RULES — apply for the entire duration this ticket is active:**
 
-*Case 1 — Both `spec_empty` and `plan_empty` are `true`:*
+- **On creation or activation:** Leave ticket in `open` state. Do NOT call `Ticket_put_status` automatically.
+- **When the user sends their first message or activity begins:** Call `duplo-helpdesk::Ticket_put_status` with `{ "status": "inProgress" }` before forwarding the message to the agent.
+- **When the user confirms changes, says they are done, or explicitly finishes the activity:** Call `duplo-helpdesk::Ticket_put_status` with `{ "status": "closed", "disposition": "resolved" }`. Remove `active_ticket_name` from state. Tell the user the ticket has been closed.
 
-Ask the user:
-> Both spec and plan are empty. What would you like to do?
-> 1. Start writing the spec
-> 2. Skip spec and go directly to plan creation
+Do NOT close the ticket automatically for any other reason. Only close when the user explicitly confirms they are done with the activity on this ticket.
 
-*Case 2 — `spec_empty` is `false`, `plan_empty` is `true`:*
+**HARD RULES — apply for the entire duration this ticket is active:**
 
-Ask the user:
-> A spec exists but the plan is empty. What would you like to do?
-> 1. Resume writing the spec
-> 2. Move to plan creation
+- **On creation or activation:** Leave ticket in `open` state. Do NOT call `Ticket_put_status` automatically.
+- **When the user sends their first message or activity begins:** Call `duplo-helpdesk::Ticket_put_status` with `{ "status": "inProgress" }` before forwarding the message to the agent.
+- **When the user confirms changes, says they are done, or explicitly finishes the activity:** Call `duplo-helpdesk::Ticket_put_status` with `{ "status": "closed", "disposition": "resolved" }`. Remove `active_ticket_name` from state. Tell the user the ticket has been closed.
 
-*Case 3 — Both `spec_empty` and `plan_empty` are `false`:*
+Do NOT close the ticket automatically for any other reason. Only close when the user explicitly confirms they are done with the activity on this ticket.
 
-Ask the user:
-> Both spec and plan already have content. Resume work on the plan?
+---
 
-- If the user confirms: delegate to `skills/write_plan/SKILL.md`.
-- If the user declines: stop.
+## Step 7b — Confirm or change the agent
 
-**Step 6 — Delegate to write skill:**
+**If `DUPLO_AGENT_MODE=false` or not set (local agent mode):** skip this step entirely. Claude handles all responses directly — no remote agent assignment needed.
 
-Based on the user's choice in Step 5:
-- "Start writing spec" or "Resume writing spec" → read and follow `skills/write_spec/SKILL.md`.
-- "Skip spec / go to plan", "Move to plan creation", or "Resume plan" → read and follow `skills/write_plan/SKILL.md`.
+**If `DUPLO_AGENT_MODE=true`:**
+
+Call `duplo-helpdesk::Workspaces_get_agents` with `id = workspace_id`.
+
+From the ticket data (captured in Step 3 or Step 4e), note the `aiAgentId`.
+
+**Context:** Once a ticket is active, the assigned agent handles all your messages. Claude Code only manages ticket lifecycle (activation, creation, closing, spec and plan writing).
+
+**If the ticket already has an agent assigned:**
+
+Resolve the agent name from the agents list. Tell the user:
+> "**\<agent name\>** is assigned to this ticket and will respond to your messages. Would you like to continue with this agent or switch?
+> 1. Continue with **\<agent name\>**
+> 2. Switch agent"
+
+- If user picks **1**: keep current agent. Stop here.
+- If user picks **2**: show the agent list (Step 7b-select).
+
+**If no agent is assigned:**
+
+Tell the user: "No agent is assigned to this ticket yet. Please pick one to handle your messages:"
+Go to Step 7b-select.
+
+### Step 7b-select — Pick an agent
+
+Show agent names only (no IDs or endpoints):
+```
+1. <name>
+2. ...
+```
+Ask: "Which agent should handle your messages?"
+
+Call `duplo-helpdesk::Ticket_put_assignee` with `workspaceId = workspace_id`, `ticketName = active_ticket_name`, `agentId = <selected agent id>`.
+
+Tell the user: "**\<agent name\>** is now assigned."
+
+Then tell the user:
+> "Ticket 🟢 **\<title\>** is ready. **\<agent name\>** will respond to your messages."

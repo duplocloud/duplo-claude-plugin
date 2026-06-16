@@ -1,0 +1,241 @@
+---
+description: DuploCloud plugin operating rules
+alwaysApply: true
+---
+
+# DuploCloud Plugin — Cursor Rules
+
+## HARD RULES — Read First
+
+**NEVER output raw JSON, API responses, request bodies, or tool parameters in your text.** After any tool call, output only a plain-language result (e.g. "Found 1 workspace." or "Ticket created."). Never echo what the tool returned.
+
+## MCP Server
+
+All DuploCloud backend calls go through the **`duplo-helpdesk` MCP server** configured in `.mcp.json`.
+Skills and docs use the generic name `duplo-helpdesk::<OperationId>`. In Cursor the actual tool name is `duplo-helpdesk_<OperationId>` — map accordingly.
+
+Environment variables are interpolated from `.env` via the MCP config:
+- `DUPLO_TOKEN` — Bearer token for API auth
+- `DUPLO_HELPDESK_URL` — Helpdesk server base URL
+- `DUPLO_AGENT_MODE` — `true` = DuploCloud backend AI agent handles responses (default); `false` = Cursor/Claude acts as the local agent (record-only mode)
+
+## TOON Response Format
+
+All MCP responses use **TOON (Token-Optimized Object Notation)** — `toon|` prefix followed by compact JSON with abbreviated keys. Strip the `toon|` prefix to parse.
+
+**Exception:** `Ticket_send_message_streaming` always returns **plain JSON** (not TOON) — SSE responses are free-text dominated; the key table overhead outweighs any savings.
+
+**Values:** `null` → `"~"`, `true` → `"T"`, `false` → `"F"`.
+**Schema arrays:** `{"_sch":[keys],"_dat":[[values],…]}` — zip `_sch` with each `_dat` row.
+
+**Key abbreviations:** `id`→`i`, `name`→`n`, `type`→`t`, `status`→`s`, `title`→`ttl`, `description`→`desc`, `content`→`cnt`, `data`→`d`, `success`→`ok`, `result`→`res`, `errors`→`errs`, `message`→`m`, `present_files`→`pf`, `path`→`p`, `message_id`→`mid`, `executed_tool_calls`→`etc`, `turn_usage`→`tu`, `workspaceId`→`wid`, `ticketName`→`tn`, `aiAgentId`→`agid`, `project`→`prj`, `isActive`→`act`, `version`→`ver`, `createdAt`→`ca`, `created_at`→`c_at`, `updatedAt`→`ua`, `updated_at`→`u_at`, `metaData`→`mdata`, `approvalState`→`aprv`, `spec`→`spc`, `plan`→`pln`, `execution`→`exec`, `stages`→`stg`, `tasks`→`tsk`, `progress`→`prog`, `input_tokens`→`itk`, `output_tokens`→`otk`.
+
+## UX Rules
+
+### Status lines
+
+Before each tool call, print a conversational status line:
+
+```
+Now let me fetch your available workspaces
+Let me load the project details
+Creating your ticket now
+Sending your message to the agent
+```
+
+Use natural, first-person phrasing. One line per logical action.
+
+### Displaying tool responses
+
+**HARD RULE: Never output raw JSON, request bodies, response payloads, or tool parameters in your text response.**
+
+After every tool call, output only a plain-language result:
+- "Found 2 workspaces."
+- "Ticket created successfully."
+- "Project **projectWeb** is active."
+
+### Read-only GET calls
+
+**HARD RULE: Never ask the user for permission before read-only GET tool calls.**
+
+Treat all read-only GET calls as **auto-approved** (including `Workspaces_get_scopes`, `Workspaces_get_skills`, `Workspaces_get_personas`, `Workspaces_get_agents`, `Ticket_list`, `Projects_get`, and other `*_get*`/list endpoints).
+
+Run these calls directly when needed for discovery, listing, validation, or context loading. Only ask the user to choose when results require a decision (workspace/project/ticket/agent/stage/task selection), not to approve the GET call itself.
+
+### Auto-selection
+
+When logic auto-selects an item (single result, or matches saved state), always tell the user explicitly:
+
+```
+Auto-selecting 🟢 **<item-name>** — it's the only one available.
+Auto-selecting 🟢 **<item-name>** — matches your saved session.
+```
+
+### Active item highlighting
+
+Always prefix active workspace, project, or ticket names with 🟢 in messages, prompts, and lists. In numbered lists, only the currently active item gets the prefix.
+
+## Local State
+
+Session state is stored in `.duplocloud/state.toon` (TOON format — Token-Oriented Object Notation).
+
+**Schema:**
+```
+workspace_id: <string>
+project_id: <string>
+project_name: <string>
+active_ticket_name: <string>
+```
+
+**Example:**
+```
+workspace_id: 69c13422c25d7d1dc686defa
+project_id: 69d5f9544b20f07d1a62f4ed
+project_name: projectWeb
+active_ticket_name: AWSSAMPLEWORKSPACE-25
+```
+
+Read state at the start of each command. Write state at the end. To omit optional fields, leave them out.
+
+If `workspace_id` is missing and a command requires it:
+- Tell the user: "No active workspace. Please run the activate_project or activate_ticket command first."
+- Stop and wait.
+
+## Agent Communication
+
+**HARD RULE: When a ticket is active, the AI is a transparent passthrough.** Communication is strictly between the user and the agent. The AI only relays messages and handles ticket lifecycle.
+
+**NEVER:** add commentary, judge the response, retry/rephrase, generate content the agent should produce, intercept the conversation, or **summarise the agent's response unless the user explicitly asks for a summary**.
+**ALWAYS:** forward the user's message exactly, output the agent's `text` response **in full — never summarise or truncate**, display `present_files` canvas content inline, then offer to save them to the project.
+
+**On timeout or auth errors:** Tell the user:
+> "The agent request timed out. This may be an authentication issue."
+Then stop and wait. Do NOT retry unless the user explicitly asks.
+
+When the user sends a message with an active ticket:
+
+1. Read `.duplocloud/state.toon` and `.env` to get `workspace_id`, `active_ticket_name`, `DUPLO_TOKEN`, `DUPLO_HELPDESK_URL`, and `DUPLO_AGENT_MODE`.
+
+**If `DUPLO_AGENT_MODE=false` or not set (Cursor/Claude as local agent — record-only mode):**
+
+   a. Record the user's message to the ticket — call `duplo-helpdesk::Ticket_send_message` with `workspaceId = workspace_id`, `ticketName = active_ticket_name`, and body:
+   ```json
+   { "content": "<user message>", "role": "user", "message_mode": 1, "data": {} }
+   ```
+   b. Respond directly as the agent. Do NOT call `Ticket_send_message_streaming`.
+   c. After composing your response, record it to the ticket — call `duplo-helpdesk::Ticket_send_message` with `workspaceId = workspace_id`, `ticketName = active_ticket_name`, and body:
+   ```json
+   { "content": "<your response text>", "role": "assistant", "message_mode": 1, "data": {} }
+   ```
+   d. Display your response to the user.
+
+**If `DUPLO_AGENT_MODE=true` (DuploCloud backend agent — default):**
+
+2. Call `duplo-helpdesk::Ticket_send_message_streaming` with:
+   ```json
+   {
+     "workspaceId": "<workspace_id>",
+     "ticketName": "<active_ticket_name>",
+     "content": "<user message>",
+     "message_mode": 0,
+     "data": {},
+     "platform_context": {
+       "duplo_base_url": "<DUPLO_HELPDESK_URL>",
+       "duplo_token": "<DUPLO_TOKEN>"
+     }
+   }
+   ```
+3. **Read the plain JSON response.** The server pre-assembles SSE into a single JSON object:
+   - `text` — agent's prose reply (may be a summary or commentary).
+   - `present_files` — array of canvas files; each entry has `path` and `content`. This is the **actual artifact** (spec, plan, tasks) — always the authoritative output when present.
+   - Ignore `message_id`, `executed_tool_calls`, `turn_usage` fields.
+4. If `text` is absent/empty or the call failed:
+   > "Agent not available."
+   Fetch the agent list with `duplo-helpdesk::Workspaces_get_agents` and offer to switch agents.
+   Do not answer the user's original message yourself.
+5. Output the **complete, unabridged** `text` value as your reply. Apply Markdown formatting for readability but never drop content.
+
+6. **HARD RULE: If `present_files` is present and non-empty, you MUST display every canvas file's full content inline immediately below the agent's text.** Format each file as a Markdown section with its `path` as the heading, followed by the full `content` in a fenced code block. Do NOT skip, truncate, or defer this — the file content is the real artifact; the agent's `text` is only commentary.
+
+   After displaying all canvas files, ask the user:
+   > "The agent produced the above canvas file(s). Shall I save them to the project? (y/n)"
+   - **y** — call `duplo-helpdesk::Projects_patch` (for spec/plan) or `duplo-helpdesk::Projects_update_plan_execution` (for execution tasks). Confirm saved.
+   - **n** — acknowledge and stop.
+
+If any MCP tool call fails, show the error and stop:
+```
+Error: <error message>
+```
+
+## Ticket Lifecycle
+
+When the user explicitly asks to close a ticket:
+
+1. Ask for confirmation: "Shall I mark this ticket as resolved and close it? (y/n)"
+2. If confirmed — call `duplo-helpdesk::Ticket_put_status` with `{ "status": "closed", "disposition": "resolved" }`.
+3. Remove `active_ticket_name` from state.
+
+**Never close a ticket automatically.** Only close when the user explicitly requests it.
+
+## Ticket Summary
+
+**Never save a summary unless the user explicitly asks.** The only trigger is text like "save summary" or "update summary".
+
+When requested:
+1. Ask for confirmation.
+2. If confirmed — follow the save_summary command.
+
+## Canvas Clear
+
+**STRICT RULE: Never clear the spec, plan, or canvas files unless the user explicitly requests it** (e.g. "clear the canvas", "reset the spec and plan", "wipe canvas files"). No other trigger is valid.
+
+This operation is **project-scoped** — it requires an active project (`project_id` in state). If no project is active, tell the user to run `/duplo:activate_project` first and stop.
+
+When explicitly requested:
+1. Read and follow `skills/clear_canvas/SKILL.md`.
+
+## MCP Tool Logging
+
+Log every `duplo-helpdesk::*` tool call to `.duplocloud/duplo-plugin.log.json` (gitignored).
+
+**Log entry schema:**
+```json
+{
+  "timestamp": "<ISO 8601 UTC>",
+  "project_name": "<from state or null>",
+  "ticket_name": "<from state or null>",
+  "tool": "<duplo-helpdesk::OperationId>",
+  "request": {},
+  "response": {}
+}
+```
+
+Accumulate entries during the flow and flush at the end. Do not let logging failures block the main flow.
+
+## Commands
+
+Plugin commands are in `.cursor/commands/duplo/`. When a user runs a command, read and follow the corresponding file:
+
+| Command | File |
+|---------|------|
+| activate_project | `.cursor/commands/duplo/activate_project.md` |
+| activate_ticket | `.cursor/commands/duplo/activate_ticket.md` |
+| ai_planner | `.cursor/commands/duplo/ai_planner.md` |
+| write_spec | `.cursor/commands/duplo/write_spec.md` |
+| write_plan | `.cursor/commands/duplo/write_plan.md` |
+| save_summary | `.cursor/commands/duplo/save_summary.md` |
+| clear_canvas | `.cursor/commands/duplo/clear_canvas.md` |
+| deactivate | `.cursor/commands/duplo/deactivate.md` |
+| check_mcp | `.cursor/commands/duplo/check_mcp.md` |
+
+## End of Turn Summary
+
+**Do NOT append a Work Done summary during multi-step skill flows** (activate_project, ai_planner, etc.). Only append a summary after the **final step** of a flow, or after standalone work outside a skill.
+
+```
+---
+**Work Done**
+- <bullet: what was done>
+```
+
+Omit for pure Q&A exchanges.

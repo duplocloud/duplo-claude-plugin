@@ -1,171 +1,227 @@
 ---
-name: activate_project
+name: activate-project
 description: Activate a DuploCloud project context.
 disable-model-invocation: false
 ---
 
+## Color Coding — HARD RULE
+
+**Always prefix active workspace, project, or ticket names with a 🟢 emoji.** This applies everywhere an active/selected name is displayed — auto-select messages, confirmation prompts, health tables, and list items.
+
+Example:
+> Auto-selecting 🟢 **aws-sample-workspace** — it's the only workspace available.
+
+In lists, only the currently active item gets the 🟢 prefix.
+
+---
+
 Follow these steps in order:
 
-**Step 1 — Read current state:**
+---
 
-```bash
-python3 ~/.duplocloud/bin/duplo_activate.py --check-state
+## Step 1 — Resolve workspace
+
+Read `.duplocloud/state.toon` (file may not exist). Note `workspace_id`, `project_id`, `project_name` if present.
+
+Call `duplo-helpdesk::Workspaces_get_available` to get the list of available workspaces.
+
+If the call fails with an auth or connection error, stop and tell the user:
+> "Cannot reach the duplo-helpdesk MCP server. Ensure `DUPLO_TOKEN` is exported and the server is running."
+
+- If the call returns an empty list, tell the user:
+  > "It looks like you don't have any workspaces set up yet. Please create one in the DuploCloud portal first."
+  Then stop.
+
+- If only **one** workspace is returned: auto-select it and tell the user:
+  > "Auto-selecting 🟢 **\<workspace name\>** — it's the only workspace available."
+  Capture its `id` as `workspace_id`.
+
+- If **multiple** workspaces and `workspace_id` is present in state:
+  - Check whether that `workspace_id` exists in the returned list.
+  - If **found**: ask the user:
+    > "You're currently connected to 🟢 **\<workspace name\>**. Would you like to continue with this workspace? (y/n)"
+    - **y** → use this workspace. Proceed to Step 2.
+    - **n** → show the workspace list (Step 1a).
+  - If **not found**: tell the user the previously saved workspace is no longer available, then show the workspace list (Step 1a).
+
+- If `workspace_id` is absent from state: show the workspace list (Step 1a).
+
+### Step 1a — Choose a workspace
+
+Show a numbered list using only the workspace **name** (no raw IDs). If a workspace matches the `workspace_id` currently in state, prefix it with 🟢:
+```
+Here are your available workspaces:
+1. 🟢 <name>   ← currently active
+2. <name>
+...
+```
+Ask: "Which workspace would you like to use?"
+
+Capture the selected workspace's `id` as `workspace_id` (store internally, do not show to the user).
+
+If the newly selected workspace **differs** from what was in state: **clear `project_id` and `project_name`** (the old project belongs to the old workspace).
+
+---
+
+## Step 2 — Resolve project
+
+Call `duplo-helpdesk::Projects_list` with `workspaceId = workspace_id`.
+
+**TOON parsing — do this before any case logic:**
+The response is TOON-encoded. Strip the `toon|` prefix and parse JSON. The project list is under `d.itms` (not a top-level array). `itms` will be either:
+- A plain array of objects → use as-is.
+- A schema array `{ "_sch": [...], "_dat": [[...], ...] }` → expand by zipping each `_dat` row with `_sch` to produce plain objects.
+
+TOON key map for project fields: `i` = id, `n` = name, `desc` = description, `act` = isActive. Use these when reading project properties.
+
+After expanding, `projects` is a plain list of objects. Proceed with case logic below.
+
+If the list is empty: tell the user "No projects found in this workspace. Please create a project in the DuploCloud portal first." and stop.
+
+**Case A — only one remote project:**
+- If its `i` matches `project_id` in local state → tell the user:
+  > "Auto-selecting 🟢 **\<n\>** — it matches your saved session."
+  Proceed to Step 4.
+- Otherwise → tell the user:
+  > "Auto-selecting 🟢 **\<n\>** — it's the only project available."
+  Capture `i` as `project_id` and `n` as `project_name`. Proceed to Step 4.
+
+**Case B — multiple remote projects, `project_id` present in state AND found in remote list (match on `i`):**
+> "Active project: 🟢 **\<project_name\>**. Would you like to continue with this project or select a different one?
+> 1. Continue with **\<project_name\>**
+> 2. Select from list"
+- **1** → keep current project. Proceed to Step 4.
+- **2** → continue to Step 3.
+
+**Case C — multiple remote projects, `project_id` absent OR not found in remote list:**
+Continue to Step 3.
+
+---
+
+## Step 3 — List and select project
+
+Show the user a numbered list. If a project matches the `project_id` currently in state, prefix it with 🟢:
+```
+Available projects:
+1. 🟢 <name> — <description>   ← currently active
+2. <name> — <description or "no description">
+...
+```
+Ask: "Which project would you like to activate?"
+
+Wait for selection. Capture:
+- **`i`** field (TOON for `id`) → `project_id`
+- **`n`** field (TOON for `name`) → `project_name`
+
+---
+
+## Step 4 — Save state
+
+**If `DUPLO_AGENT_MODE=false` or not set (local agent mode)**: call these in parallel with the state write (one tool-call group):
+- `duplo-helpdesk::Workspaces_get_personas` with `id = workspace_id`
+- `duplo-helpdesk::Workspaces_get_scopes` with `id = workspace_id`
+- `duplo-helpdesk::Workspaces_get_skills` with `id = workspace_id` — workspace-specific skills via personas
+- `duplo-helpdesk::Workspaces_get_skills_built_in_files` (no parameters) — platform built-in skill files
+- `duplo-helpdesk::Projects_get` with `id = project_id`
+
+Write all of the following in the single Bash flush:
+- `.duplocloud/state.toon` — workspace + project state
+- `~/.duplocloud/workspace_context.json` — with `fetched_at` set to now (ISO 8601 UTC), personas, scopes, skills, and project data. See **Local Agent Context** section in `CLAUDE.md` for schema.
+- `~/.duplocloud/skills/<skillName>/<path>` — for each entry from `Workspaces_get_skills_built_in_files` write `content` to the corresponding path. For each workspace skill with non-empty `skillMd` write to `~/.duplocloud/skills/<name>/SKILL.md`. Create `~/.duplocloud/skills/` directory first.
+
+Write `.duplocloud/state.toon` silently using bash, preserving any existing `active_ticket_name` and `tickets` fields if the workspace has not changed:
+```
+workspace_id: <workspace_id>
+project_id: <project_id>
+project_name: <project_name>
 ```
 
-Capture `workspace` and `project` from the JSON output. This makes no API call.
+Create the `.duplocloud/` directory first if it does not exist.
 
-**Step 2 — Workspace: resume or switch?**
+---
 
-- If `workspace` is **not null** in the Step 1 output: ask the user:
-  > "You are currently working as **\<workspace.name\>**. Continue with this workspace? (y/n)"
-  - **y** → skip to Step 5 (project resume check)
-  - **n** → continue to Step 3
+## Step 5 — Fetch project data
 
-- If `workspace` is **null**: continue to Step 3.
+Call `duplo-helpdesk::Projects_get` with `id = project_id`.
 
-**Step 3 — List workspaces (also validates credentials):**
+From the response extract:
+- `spec.content` → `spec_content` (string, may be blank or absent)
+- `spec.metaData.approvalState` → `spec_state`:
+  - `"Approved"` → **Approved**
+  - content present but not approved → **Draft**
+  - content absent or blank → **Not started**
+- `plan.content` → `plan_content` (string, may be blank or absent)
+- `plan.metaData.approvalState` → `plan_state` (same logic as spec)
+- `execution.stages` → `stages` (full array; store for use in Steps 8–12)
+- `execution.version` → `execution_version`
+- `has_execution_tasks` = true if any stage in `stages` has at least one task
 
-```bash
-python3 ~/.duplocloud/bin/duplo_activate.py --list-workspaces
-```
+---
 
-- If exit code is **3** (no auth or invalid token): tell the user:
-  > "Your credentials file will open in VSCode. Fill in `base_url` and `token`, then save and close. If VSCode is not available, a terminal command will be shown instead."
+## Step 6 — Project health
 
-  Then run:
-  ```bash
-  python3 ~/.duplocloud/bin/duplo_activate.py --edit-auth
-  ```
+Display the health table:
 
-  - If exit code is **0**: re-run `--list-workspaces`.
-    - If `--list-workspaces` still returns exit **3**: tell the user "Credentials still invalid — please re-check the values." and re-run `--edit-auth`.
-  - If exit code is **1** (VSCode not available): show the printed terminal command to the user and tell them to run it, then re-run `/duplo:activate_project` once they're done.
-
-- If exit code is **0**: show the numbered workspace list to the user. Write out each numbered item clearly in your response text so the user can read the full list without expanding tool output.
-  - If the output contains "(Only one workspace found — will be auto-selected.)": automatically proceed to Step 4 with N=1 (skip asking the user).
-  - If multiple workspaces are listed: ask the user:
-    > "Which workspace are you working as? (enter the number)"
-
-**Step 4 — Set workspace:**
-
-```bash
-python3 ~/.duplocloud/bin/duplo_activate.py --set-workspace <N>
-```
-
-(Replace `<N>` with the number the user provided, or `1` if auto-selected.)
-
-After setting the workspace, the old project is cleared from state. Continue directly to Step 6 (always show project list after an workspace change).
-
-**Step 5 — Project: resume or switch? (only reached if workspace was NOT changed in this run)**
-
-- If `project` is **not null** in the Step 1 output: ask the user:
-  > "Active project: **\<project.name\>**. Continue with this project? (y/n)"
-  - **y** → show a summary of the active workspace and project, then continue to Step 5a.
-  - **n** → continue to Step 6.
-
-- If `project` is **null**: continue to Step 6.
-
-**Step 5a — Sync local files (same project):**
-
-Check if local files exist:
-- `.duplocloud/spec.md`
-- `.duplocloud/plan.md`
-
-If **neither** file exists: silently download both (proceed to Step 5b).
-
-If **one or both** exist: ask the user:
-> "Local spec/plan files exist. Overwrite with the latest versions from the platform? (y/n)"
-- **n** → keep local files, skip to Step 10 (health display).
-- **y** → proceed to Step 5b.
-
-**Step 5b — Download spec and plan:**
-
-```bash
-python3 ~/.duplocloud/bin/duplo_ticket.py --get-spec
-```
-- If output is non-empty: save it to `.duplocloud/spec.md`.
-- If output is empty: leave any existing `.duplocloud/spec.md` unchanged (no platform content yet).
-
-```bash
-python3 ~/.duplocloud/bin/duplo_ticket.py --get-plan
-```
-- If output is non-empty: save it to `.duplocloud/plan.md`.
-- If output is empty: leave any existing `.duplocloud/plan.md` unchanged.
-
-Tell the user which files were updated, then continue to Step 10.
-
-**Step 6 — List projects (filtered by workspace in state):**
-
-```bash
-python3 ~/.duplocloud/bin/duplo_activate.py --list
-```
-
-Show the numbered project list to the user. Write out each numbered item clearly in your response text so the user can read the full list without expanding tool output.
-
-**Step 7 — Ask user to select project:**
-
-> "Which project would you like to activate? (enter the number)"
-
-```bash
-python3 ~/.duplocloud/bin/duplo_activate.py --select <N>
-```
-
-(Replace `<N>` with the number the user provided.)
-
-**Step 8 — Show the confirmation output to the user.**
-
-**Step 9 — Sync local files (new project — always overwrite):**
-
-```bash
-python3 ~/.duplocloud/bin/duplo_ticket.py --get-spec
-```
-- If output is non-empty: save it to `.duplocloud/spec.md`.
-
-```bash
-python3 ~/.duplocloud/bin/duplo_ticket.py --get-plan
-```
-- If output is non-empty: save it to `.duplocloud/plan.md`.
-
-Tell the user which files were written (or "no platform content yet" if both were empty).
-Continue to Step 10.
-
-**Step 10 — Show project health:**
-
-```bash
-python3 ~/.duplocloud/bin/duplo_ticket.py --check-project
-```
-
-- If exit code is **3**: tell the user "Project state missing — please re-run /duplo:activate_project." and stop.
-- If exit code is **1**: show the error and stop.
-- If exit code is **0**: parse the JSON and display a health summary:
-
-> **Project:** `<project_name>`
+> **Project:** 🟢 **\<project_name\>**
 >
 > | Artifact | Status |
 > |----------|--------|
-> | Spec     | Approved / Draft (local file exists) / Not started |
-> | Plan     | Approved / Draft (local file exists) / Not started |
+> | Spec | \<spec_state\> |
+> | Plan | \<plan_state\> |
+> | Tasks | \<N tasks ready / None\> |
 
-Determine artifact status independently for each artifact:
+---
 
-**Spec status:**
-- `action` = `"plan"` or `"none"` → **Approved**
-- `action` = `"spec"` and `.duplocloud/spec.md` exists → **Draft**
-- `action` = `"spec"` and `.duplocloud/spec.md` does not exist → **Not started**
+## Step 7 — Routing
 
-**Plan status:**
-- `action` = `"none"` → **Approved**
-- `action` != `"none"` and `.duplocloud/plan.md` exists → **Draft**
-- `action` != `"none"` and `.duplocloud/plan.md` does not exist → **Not started**
+Based on the health data, determine the next action:
 
-Then ask the user whether to proceed:
-- `"spec"` → ask: "Would you like to activate the spec ticket now? (y/n)"
-  - **y** → run the `activate_ticket` skill inline (follow its steps from the beginning).
-  - **n** → stop.
-- `"plan"` → ask: "Spec is approved. Would you like to activate the plan ticket now? (y/n)"
-  - **y** → run the `activate_ticket` skill inline (follow its steps from the beginning).
-  - **n** → stop.
-- `"none"` + `has_execution_tasks` = `true` → tell the user "Both spec and plan are approved. Execution tasks are ready." then ask: "Would you like to pick up an execution task now? (y/n)"
-  - **y** → run the `activate_ticket` skill inline (follow its steps from the beginning, starting at Step 2b since `has_execution_tasks` is already known to be `true`).
-  - **n** → stop.
-- `"none"` + `has_execution_tasks` = `false` → tell the user "Both spec and plan are approved — waiting for the platform to generate execution tasks." and stop.
+**Case 1: Execution tasks already exist** (`has_execution_tasks` = true)
+→ Proceed to **Step 7b** (show full menu) — users can work on tasks while refining spec/plan.
+
+**Case 2: No execution tasks yet** (`has_execution_tasks` = false)
+→ Based on spec/plan states, suggest the next action:
+
+| Condition | Prompt |
+|---|---|
+| Spec **Not started** | "This project doesn't have a spec yet. Would you like to start the AI Planner? (y/n)" → if y, follow `skills/ai_planner/SKILL.md` |
+| Spec **Draft** | "There's a spec draft in progress. Would you like to continue with the AI Planner to refine or confirm it? (y/n)" → if y, follow `skills/ai_planner/SKILL.md` |
+| Spec **Approved**, plan **Not started** or **Draft** | "Spec is approved. Would you like to continue with the AI Planner to build the plan? (y/n)" → if y, follow `skills/ai_planner/SKILL.md` |
+| Both **Approved** | Proceed to **Step 7b** (show full menu) |
+
+If the user declines any prompt: stop.
+
+---
+
+## Step 7b — Both Spec and Plan Approved (menu routing)
+
+**Execute this step when both spec and plan are approved** (regardless of whether execution tasks exist).
+
+Ask:
+> "Spec and plan are approved. What would you like to do?
+> 1. Edit spec
+> 2. Edit plan
+> 3. Work on execution tasks
+> 4. Done"
+
+- **1** → Tell the user: "Run `/duplo:write_spec` to edit the spec." Then stop.
+- **2** → Tell the user: "Run `/duplo:write_plan` to edit the plan." Then stop.
+- **3** → Check `has_execution_tasks`:
+  - If true → Follow `skills/stage_tasks/SKILL.md` (project is already active, so **Step 0a is skipped** — jump directly to Step 0b). After stage_tasks completes, the skill ends.
+  - If false → Tell the user: "No execution stages exist yet. Run `/duplo:ai_planner` to generate stages and tasks first." Then stop.
+- **4** → Stop.
+
+---
+
+## Step 8 — Available project commands
+
+Once a project is active, the user can run:
+
+| Command | What it does |
+|---------|-------------| | `/duplo:ai_planner` | Run the AI Planner to write or refine spec, plan, and tasks |
+| `/duplo:write_spec` | Write or update the project spec |
+| `/duplo:write_plan` | Write or update the implementation plan |
+| `/duplo:activate_ticket` | Pick up a ticket under this project |
+| `/duplo:stage_tasks` | Manage execution stages and tasks — list, add, edit, delete, create tickets (jumps to `stage_tasks` skill) |
+| `/duplo:clear_canvas` | **Explicitly reset** the spec, plan, and canvas files (requires confirmation) |
+

@@ -1,0 +1,27 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(*)",
+      "Read(.duplocloud/state.toon)",
+      "Write(.duplocloud/state.toon)",
+      "Edit(.duplocloud/state.toon)",
+      "Write(.duplocloud/duplo-plugin.log.json)",
+      "Read(.duplocloud/duplo-plugin.log.json)",
+      "mcp__duplo-helpdesk__Workspaces_get_available",
+      "mcp__duplo-helpdesk__Workspaces_get_agents",
+      "mcp__duplo-helpdesk__Ticket_list",
+      "mcp__duplo-helpdesk__Ticket_get",
+      "mcp__duplo-helpdesk__Ticket_create",
+      "mcp__duplo-helpdesk__Ticket_put_status",
+      "mcp__duplo-helpdesk__Ticket_put_assignee",
+      "mcp__duplo-helpdesk__Ticket_get_messages",
+      "mcp__duplo-helpdesk__Ticket_send_message_streaming",
+      "mcp__duplo-helpdesk__Ticket_get_project_task",
+      "mcp__duplo-helpdesk__Projects_list",
+      "mcp__duplo-helpdesk__Projects_get",
+      "mcp__duplo-helpdesk__Projects_patch",
+      "mcp__duplo-helpdesk__Projects_update_plan_execution"
+    ]
+  },
+  "hooks": {}
+}

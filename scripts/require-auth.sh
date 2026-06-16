@@ -23,13 +23,13 @@ if [[ "$TOOL_NAME" == "Bash" ]]; then
 fi
 
 # Auth present but no project state
-STATE_FILE=".duplocloud/state.json"
+STATE_FILE=".duplocloud/state.toon"
 if [ ! -f "$STATE_FILE" ]; then
   echo "DuploCloud is activated but no project context. Run /duplo:activate_project first." >&2
   exit 2
 fi
 
-PROJECT=$(python3 -c "import json; d=json.load(open('$STATE_FILE')); print(d.get('project_id',''))" 2>/dev/null)
+PROJECT=$(grep '^project_id:' "$STATE_FILE" 2>/dev/null | sed 's/^project_id: *//')
 if [ -z "$PROJECT" ]; then
   echo "DuploCloud state exists but has no project. Run /duplo:activate_project again." >&2
   exit 2
