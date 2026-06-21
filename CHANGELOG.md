@@ -4,7 +4,11 @@ All notable changes to the DuploCloud Claude Plugin are documented here.
 
 ---
 
-## [Unreleased] — Phase 1: Foundation
+## [Unreleased]
+
+---
+
+## [0.0.0] — 2026-04-06 — Phase 1: Foundation
 
 ### Added
 
