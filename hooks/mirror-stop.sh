@@ -29,8 +29,10 @@ with open(transcript_path) as f:
         except Exception:
             continue
 
-# Check if the last assistant message used Ticket_send_message_streaming or Ticket_send_message.
-# If so, those conversations are already in the ticket — do not mirror again.
+# Check if the last assistant message used Ticket_send_message (not streaming).
+# If so, the assistant response is already recorded — do not mirror again.
+# Note: Ticket_send_message_streaming does NOT auto-record the agent reply,
+# so we do NOT skip for streaming turns.
 for msg in reversed(messages):
     if msg.get('role') == 'assistant':
         content = msg.get('content', [])
@@ -38,7 +40,8 @@ for msg in reversed(messages):
             for block in content:
                 if block.get('type') == 'tool_use':
                     tool = block.get('name', '')
-                    if 'Ticket_send_message' in tool:
+                    # Only skip if a record-mode send (not streaming) was used
+                    if 'Ticket_send_message' in tool and 'streaming' not in tool:
                         sys.exit(1)  # skip — already in ticket
         break
 

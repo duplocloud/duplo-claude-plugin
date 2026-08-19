@@ -197,6 +197,12 @@ When the user sends a message with an active ticket:
    Do not answer the user's original message yourself under any circumstances.
 5. Output the **complete, unabridged** `text` value as your reply. Apply Markdown formatting for readability but never drop content. Do not add your own opinions or answers beyond what the agent provided.
 
+5b. **HARD RULE — Record agent response to ticket** — immediately after displaying the text, call `duplo-helpdesk::Ticket_send_message` with `workspaceId = workspace_id`, `ticketName = active_ticket_name`, and body:
+   ```json
+   { "content": "<the full agent text just displayed>", "role": "assistant", "message_mode": 1, "data": {} }
+   ```
+   This records the agent's reply in the ticket conversation so it is visible in the portal. This call MUST complete before proceeding.
+
 6. **HARD RULE: If `present_files` is present and non-empty, you MUST display every canvas file's full content inline immediately below the agent's text.** Format each file as a Markdown section with its `path` as the heading, followed by the full `content` in a fenced code block. Do NOT skip, truncate, or defer this — the file content is the real artifact; the agent's `text` is only commentary.
 
    After displaying all canvas files, ask the user:

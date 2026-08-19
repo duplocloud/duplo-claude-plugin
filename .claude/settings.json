@@ -15,6 +15,7 @@
       "mcp__duplo-helpdesk__Ticket_put_status",
       "mcp__duplo-helpdesk__Ticket_put_assignee",
       "mcp__duplo-helpdesk__Ticket_get_messages",
+      "mcp__duplo-helpdesk__Ticket_send_message",
       "mcp__duplo-helpdesk__Ticket_send_message_streaming",
       "mcp__duplo-helpdesk__Ticket_get_project_task",
       "mcp__duplo-helpdesk__Projects_list",
