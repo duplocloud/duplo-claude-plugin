@@ -1,3 +1,4 @@
 .env
 .duplocloud/
 .envrc
+.cursor/mcp.json
